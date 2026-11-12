@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ThermoCity.Weather.Api/ThermoCity.Weather.Api.csproj" />
+    <Project Path="src/ThermoCity.Weather.Application/ThermoCity.Weather.Application.csproj" />
+    <Project Path="src/ThermoCity.Weather.Domain/ThermoCity.Weather.Domain.csproj" />
+    <Project Path="src/ThermoCity.Weather.Infrastructure/ThermoCity.Weather.Infrastructure.csproj" />
+    <Project Path="src/ThermoCity.Weather.Worker/ThermoCity.Weather.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ThermoCity.Weather.IntegrationTests/ThermoCity.Weather.IntegrationTests.csproj" />
+    <Project Path="tests/ThermoCity.Weather.UnitTests/ThermoCity.Weather.UnitTests.csproj" />
+  </Folder>
+</Solution>
