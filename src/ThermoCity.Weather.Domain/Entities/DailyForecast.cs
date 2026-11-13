@@ -7,7 +7,7 @@ namespace ThermoCity.Weather.Domain.Entities;
 public class DailyForecast
 {
     [BsonId]
-    public ObjectId Id { get; set; }
+    public ObjectId Id { get; set; } = ObjectId.GenerateNewId();
 
     [BsonRepresentation(BsonType.String)]
     public WeatherSource Source { get; set; }

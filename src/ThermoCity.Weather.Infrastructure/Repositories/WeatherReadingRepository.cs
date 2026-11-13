@@ -1,4 +1,5 @@
 
+using MongoDB.Bson;
 using MongoDB.Driver;
 using ThermoCity.Weather.Application.Interfaces;
 using ThermoCity.Weather.Domain.Entities;
@@ -20,12 +21,15 @@ public class WeatherReadingRepository : IWeatherReadingRepository
         WeatherReading reading,
         CancellationToken cancellationToken)
     {
-        var filter = Builders<WeatherReading>.Filter.And(
-            Builders<WeatherReading>.Filter.Eq(
-                x => x.Source, reading.Source),
-            Builders<WeatherReading>.Filter.Eq(
-                x => x.MeasurementDate, reading.MeasurementDate)
-        );
+        var filter =
+            Builders<WeatherReading>.Filter.Eq(x => x.Source, reading.Source) &
+            Builders<WeatherReading>.Filter.Eq(x => x.MeasurementDate, reading.MeasurementDate);
+
+        var existing = await _collection
+            .Find(filter)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        reading.Id = existing?.Id ?? ObjectId.GenerateNewId();
 
         await _collection.ReplaceOneAsync(
             filter,

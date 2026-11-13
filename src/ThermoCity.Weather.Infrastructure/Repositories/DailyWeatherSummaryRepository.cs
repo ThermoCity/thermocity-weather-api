@@ -1,4 +1,5 @@
 
+using MongoDB.Bson;
 using MongoDB.Driver;
 using ThermoCity.Weather.Application.Interfaces;
 using ThermoCity.Weather.Domain.Entities;
@@ -20,12 +21,15 @@ public class DailyWeatherSummaryRepository : IDailyWeatherSummaryRepository
         DailyWeatherSummary summary,
         CancellationToken cancellationToken)
     {
-        var filter = Builders<DailyWeatherSummary>.Filter.And(
-            Builders<DailyWeatherSummary>.Filter.Eq(
-                x => x.Source, summary.Source),
-            Builders<DailyWeatherSummary>.Filter.Eq(
-                x => x.ReferenceDate, summary.ReferenceDate)
-        );
+        var filter =
+            Builders<DailyWeatherSummary>.Filter.Eq(x => x.Source, summary.Source) &
+            Builders<DailyWeatherSummary>.Filter.Eq(x => x.ReferenceDate, summary.ReferenceDate);
+
+        var existing = await _collection
+            .Find(filter)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        summary.Id = existing?.Id ?? ObjectId.GenerateNewId();
 
         await _collection.ReplaceOneAsync(
             filter,

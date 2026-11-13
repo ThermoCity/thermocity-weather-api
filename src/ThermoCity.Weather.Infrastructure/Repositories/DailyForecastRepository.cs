@@ -1,4 +1,5 @@
 
+using MongoDB.Bson;
 using MongoDB.Driver;
 using ThermoCity.Weather.Application.Interfaces;
 using ThermoCity.Weather.Domain.Entities;
@@ -17,30 +18,34 @@ public class DailyForecastRepository : IDailyForecastRepository
     }
 
     public async Task UpsertManyAsync(
-        IEnumerable<DailyForecast> forecasts,
+        IReadOnlyCollection<DailyForecast> forecasts,
         CancellationToken cancellationToken)
     {
-        var operations = forecasts.Select(forecast =>
-        {
-            var filter = Builders<DailyForecast>.Filter.And(
-                Builders<DailyForecast>.Filter.Eq(
-                    x => x.Source, forecast.Source),
-                Builders<DailyForecast>.Filter.Eq(
-                    x => x.ForecastEmissionDate, forecast.ForecastEmissionDate),
-                Builders<DailyForecast>.Filter.Eq(
-                    x => x.ForecastDate, forecast.ForecastDate)
-            );
+        if (forecasts.Count == 0)
+            return;
 
-            return new ReplaceOneModel<DailyForecast>(
+        var operations = new List<WriteModel<DailyForecast>>();
+
+        foreach (var forecast in forecasts)
+        {
+            var filter =
+                Builders<DailyForecast>.Filter.Eq(x => x.Source, forecast.Source) &
+                Builders<DailyForecast>.Filter.Eq(x => x.ForecastEmissionDate, forecast.ForecastEmissionDate) &
+                Builders<DailyForecast>.Filter.Eq(x => x.ForecastDate, forecast.ForecastDate);
+
+            var existing = await _collection
+                .Find(filter)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            forecast.Id = existing?.Id ?? ObjectId.GenerateNewId();
+
+            operations.Add(new ReplaceOneModel<DailyForecast>(
                 filter,
                 forecast)
             {
                 IsUpsert = true
-            };
-        }).ToList();
-
-        if (operations.Count == 0)
-            return;
+            });
+        }
 
         await _collection.BulkWriteAsync(
             operations,
@@ -67,5 +72,10 @@ public class DailyForecastRepository : IDailyForecastRepository
             .Find(filter)
             .SortBy(x => x.ForecastDate)
             .ToListAsync(cancellationToken);
+    }
+
+    public Task UpsertManyAsync(IEnumerable<DailyForecast> forecasts, CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
     }
 }
