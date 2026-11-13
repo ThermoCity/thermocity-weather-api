@@ -18,12 +18,9 @@ public class DailyForecastRepository : IDailyForecastRepository
     }
 
     public async Task UpsertManyAsync(
-        IReadOnlyCollection<DailyForecast> forecasts,
+        IEnumerable<DailyForecast> forecasts,
         CancellationToken cancellationToken)
     {
-        if (forecasts.Count == 0)
-            return;
-
         var operations = new List<WriteModel<DailyForecast>>();
 
         foreach (var forecast in forecasts)
@@ -39,13 +36,15 @@ public class DailyForecastRepository : IDailyForecastRepository
 
             forecast.Id = existing?.Id ?? ObjectId.GenerateNewId();
 
-            operations.Add(new ReplaceOneModel<DailyForecast>(
-                filter,
-                forecast)
-            {
-                IsUpsert = true
-            });
+            operations.Add(
+                new ReplaceOneModel<DailyForecast>(filter, forecast)
+                {
+                    IsUpsert = true
+                });
         }
+
+        if (operations.Count == 0)
+            return;
 
         await _collection.BulkWriteAsync(
             operations,
@@ -74,8 +73,4 @@ public class DailyForecastRepository : IDailyForecastRepository
             .ToListAsync(cancellationToken);
     }
 
-    public Task UpsertManyAsync(IEnumerable<DailyForecast> forecasts, CancellationToken cancellationToken)
-    {
-        throw new NotImplementedException();
-    }
 }
