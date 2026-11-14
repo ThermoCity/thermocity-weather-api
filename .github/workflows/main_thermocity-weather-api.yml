@@ -1,0 +1,74 @@
+# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
+# More GitHub Actions for Azure: https://github.com/Azure/actions
+
+name: Build and deploy .NET app to Azure Web App - thermocity-weather-api
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:          # PR para a main: roda só o build e os testes (validação, sem deploy)
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  AZURE_WEBAPP_NAME: 'thermocity-weather-api'
+  SOLUTION: 'ThermoCity.Weather.slnx'
+  API_PROJECT: 'src/ThermoCity.Weather.Api/ThermoCity.Weather.Api.csproj'
+  UNIT_TESTS: 'tests/ThermoCity.Weather.UnitTests/ThermoCity.Weather.UnitTests.csproj'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read #This is required for actions/checkout
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore ${{ env.SOLUTION }}
+
+      - name: Build
+        run: dotnet build ${{ env.SOLUTION }} -c Release --no-restore
+
+      # Só os testes de unidade: os de integração precisam de MongoDB rodando.
+      - name: Unit tests
+        run: dotnet test ${{ env.UNIT_TESTS }} -c Release --no-build
+
+      - name: Publish API
+        run: dotnet publish ${{ env.API_PROJECT }} -c Release --no-build -o '${{ github.workspace }}/publish'
+
+      - name: Upload artifact for deployment job
+        uses: actions/upload-artifact@v4
+        with:
+          name: dotnet-app
+          path: '${{ github.workspace }}/publish'
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+
+    steps:
+      - name: Download artifact from build job
+        uses: actions/download-artifact@v4
+        with:
+          name: dotnet-app
+
+      - name: Deploy to Azure Web App
+        id: deploy-to-webapp
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          slot-name: 'Production'
+          package: '.'
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
