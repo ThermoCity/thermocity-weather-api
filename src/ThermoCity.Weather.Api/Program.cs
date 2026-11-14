@@ -1,6 +1,7 @@
 
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using MongoDB.Driver;
 using Serilog;
@@ -9,11 +10,13 @@ using System.Threading.RateLimiting;
 using ThermoCity.Weather.Application.Interfaces;
 using ThermoCity.Weather.Infrastructure.Mongo;
 using ThermoCity.Weather.Infrastructure.Mongo.Repositories;
+using ThermoCity.Weather.Infrastructure.PostgreSql;
+using ThermoCity.Weather.Infrastructure.PostgreSql.Repositories;
 using ThermoCity.Weather.Infrastructure.Repositories;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Configura o Serilog como provedor de logging da aplicação.
+// Configura o Serilog.
 builder.Host.UseSerilog((context, services, loggerConfiguration) =>
 {
     loggerConfiguration
@@ -26,7 +29,7 @@ builder.Host.UseSerilog((context, services, loggerConfiguration) =>
         .WriteTo.Console();
 });
 
-// Registra os controllers responsáveis pelos endpoints REST.
+// Registra os controllers.
 builder.Services
     .AddControllers()
     .AddJsonOptions(options =>
@@ -35,80 +38,107 @@ builder.Services
             new JsonStringEnumConverter());
     });
 
-// Configura a documentação da API com Swagger.
+// Configura o Swagger.
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Configura o Rate Limiting global da API.
+// Configura o Rate Limiting.
 builder.Services.AddRateLimiter(options =>
 {
-    // Define o status HTTP retornado quando o limite é excedido.
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
-    // Aplica um limitador global, separado por endereço IP do cliente.
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(
         httpContext =>
         {
-            // Obtém o endereço IP da requisição.
             var clientIp = httpContext.Connection.RemoteIpAddress?.ToString()
                 ?? "unknown";
 
             return RateLimitPartition.GetFixedWindowLimiter(
-                // Identifica o grupo de requisições que compartilhará o limite.
                 partitionKey: clientIp,
-
-                // Define as regras de limitação para cada grupo.
                 factory: partition => new FixedWindowRateLimiterOptions
                 {
-                    // Renova automaticamente a janela após seu intervalo.
                     AutoReplenishment = true,
-
-                    // Permite até 10 requisições por janela.
                     PermitLimit = 10,
-
-                    // Não mantém requisições excedentes em fila.
                     QueueLimit = 0,
-
-                    // Define a duração de cada janela de limitação.
                     Window = TimeSpan.FromMinutes(1)
                 });
         });
 });
 
-// Obtém as configurações de conexão com o MongoDB.
-var connectionString = builder.Configuration["MongoDb:ConnectionString"]
+// Configuração do MongoDB.
+var mongoConnectionString =
+    builder.Configuration["MongoDb:ConnectionString"]
     ?? throw new InvalidOperationException(
         "MongoDb:ConnectionString não foi configurada.");
 
-var databaseName = builder.Configuration["MongoDb:DatabaseName"]
+var mongoDatabaseName =
+    builder.Configuration["MongoDb:DatabaseName"]
     ?? throw new InvalidOperationException(
         "MongoDb:DatabaseName não foi configurado.");
 
-// Registra o cliente MongoDB como Singleton.
-// O MongoClient é thread-safe e deve ser compartilhado pela aplicação.
 builder.Services.AddSingleton<IMongoClient>(
-    _ => new MongoClient(connectionString));
+    _ => new MongoClient(mongoConnectionString));
 
-// Disponibiliza o banco de dados para os repositórios.
 builder.Services.AddSingleton<IMongoDatabase>(serviceProvider =>
 {
     var client = serviceProvider.GetRequiredService<IMongoClient>();
-    return client.GetDatabase(databaseName);
+    return client.GetDatabase(mongoDatabaseName);
 });
 
-// Registra os repositórios utilizados pelos controllers.
-builder.Services.AddScoped<IWeatherReadingRepository, WeatherReadingRepository>();
-builder.Services.AddScoped<IDailyForecastRepository, DailyForecastRepository>();
-builder.Services.AddScoped<IDailyWeatherSummaryRepository, DailyWeatherSummaryRepository>();
+// Configuração do PostgreSQL.
+var postgresConnectionString =
+    builder.Configuration.GetConnectionString("PostgreSql")
+    ?? throw new InvalidOperationException(
+        "ConnectionStrings:PostgreSql não foi configurada.");
 
-// Registra os Health Checks da aplicação.
+builder.Services.AddDbContext<ThermoCityDbContext>(options =>
+    options.UseNpgsql(postgresConnectionString));
+
+// Seleciona o banco utilizado nas consultas da API.
+var readProvider =
+    builder.Configuration["Database:ReadProvider"] ?? "MongoDB";
+
+switch (readProvider.ToUpperInvariant())
+{
+    case "MONGODB":
+        builder.Services.AddScoped<
+            IWeatherReadingRepository,
+            WeatherReadingRepository>();
+
+        builder.Services.AddScoped<
+            IDailyForecastRepository,
+            DailyForecastRepository>();
+
+        builder.Services.AddScoped<
+            IDailyWeatherSummaryRepository,
+            DailyWeatherSummaryRepository>();
+        break;
+
+    case "POSTGRESQL":
+        builder.Services.AddScoped<
+            IWeatherReadingRepository,
+            PostgresWeatherReadingRepository>();
+
+        builder.Services.AddScoped<
+            IDailyForecastRepository,
+            PostgresDailyForecastRepository>();
+
+        builder.Services.AddScoped<
+            IDailyWeatherSummaryRepository,
+            PostgresDailyWeatherSummaryRepository>();
+        break;
+
+    default:
+        throw new InvalidOperationException(
+            $"Provedor de leitura inválido: {readProvider}");
+}
+
+// Health Checks.
 builder.Services.AddHealthChecks()
-    // Verifica se a própria aplicação está em execução.
     .AddCheck(
         "self",
         () => HealthCheckResult.Healthy(),
         tags: new[] { "live" })
-    // Verifica a disponibilidade do MongoDB.
     .AddCheck<MongoDbHealthCheck>(
         "mongodb",
         tags: new[] { "ready" });
@@ -116,40 +146,29 @@ builder.Services.AddHealthChecks()
 // Constrói a aplicação.
 var app = builder.Build();
 
-// Registra automaticamente informações das requisições HTTP.
 app.UseSerilogRequestLogging();
 
-// Disponibiliza Swagger somente no ambiente de desenvolvimento.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
-// Redireciona requisições HTTP para HTTPS.
 app.UseHttpsRedirection();
-
-// Aplica o limite global de requisições.
 app.UseRateLimiter();
 
-// Mapeia os endpoints dos controllers.
 app.MapControllers();
 
-// Endpoint de liveness: verifica se a API está em execução.
 app.MapHealthChecks("/health/live", new HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("live")
 });
 
-// Endpoint de readiness: verifica se os serviços essenciais,
-// incluindo o MongoDB, estão disponíveis.
 app.MapHealthChecks("/health/ready", new HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("ready")
 });
 
-// Inicia a aplicação.
 app.Run();
 
-// Permite utilizar WebApplicationFactory nos testes de integração.
 public partial class Program { }

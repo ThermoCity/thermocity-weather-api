@@ -1,10 +1,12 @@
 
+using Microsoft.EntityFrameworkCore;
 using MongoDB.Driver;
 using Serilog;
 using ThermoCity.Weather.Application.Interfaces;
 using ThermoCity.Weather.Application.Services;
 using ThermoCity.Weather.Infrastructure.Mongo.Repositories;
 using ThermoCity.Weather.Infrastructure.OpenWeather;
+using ThermoCity.Weather.Infrastructure.PostgreSql;
 using ThermoCity.Weather.Infrastructure.Repositories;
 using ThermoCity.Weather.Worker.Workers;
 
@@ -44,10 +46,36 @@ builder.Services.AddSingleton<IMongoDatabase>(serviceProvider =>
     return client.GetDatabase(databaseName);
 });
 
-// Registra os repositórios responsáveis pela persistência.
-builder.Services.AddScoped<IWeatherReadingRepository, WeatherReadingRepository>();
-builder.Services.AddScoped<IDailyForecastRepository, DailyForecastRepository>();
-builder.Services.AddScoped<IDailyWeatherSummaryRepository, DailyWeatherSummaryRepository>();
+// Obtém a connection string do PostgreSQL.
+var postgresConnectionString = builder.Configuration
+    .GetConnectionString("PostgreSql")
+    ?? throw new InvalidOperationException(
+        "ConnectionStrings:PostgreSql não foi configurada.");
+
+// Registra o Entity Framework Core com o provedor PostgreSQL.
+builder.Services.AddDbContext<ThermoCityDbContext>(options =>
+{
+    options.UseNpgsql(postgresConnectionString);
+});
+
+// Registra os repositórios MongoDB como implementações concretas.
+builder.Services.AddScoped<WeatherReadingRepository>();
+builder.Services.AddScoped<DailyForecastRepository>();
+builder.Services.AddScoped<DailyWeatherSummaryRepository>();
+
+// Mantém as interfaces apontando para o MongoDB temporariamente.
+// Posteriormente serão substituídas pelos repositórios compostos.
+builder.Services.AddScoped<
+    IWeatherReadingRepository,
+    WeatherReadingRepository>();
+
+builder.Services.AddScoped<
+    IDailyForecastRepository,
+    DailyForecastRepository>();
+
+builder.Services.AddScoped<
+    IDailyWeatherSummaryRepository,
+    DailyWeatherSummaryRepository>();
 
 // Registra o serviço responsável pelo cálculo do índice de calor.
 builder.Services.AddScoped<IHeatIndexService, HeatIndexService>();
@@ -58,7 +86,6 @@ var openWeatherBaseUrl = builder.Configuration["OpenWeather:BaseUrl"]
         "OpenWeather:BaseUrl não foi configurada.");
 
 // Configura o HttpClient utilizado pelo provedor meteorológico.
-// A implementação OpenWeatherProvider recebe HttpClient e IConfiguration.
 builder.Services.AddHttpClient<IWeatherProvider, OpenWeatherProvider>(
     client =>
     {
@@ -75,7 +102,6 @@ var forecastDays = builder.Configuration.GetValue<int>(
     "Worker:ForecastDays", 3);
 
 // Registra o serviço de coleta de previsões.
-// A fábrica permite passar a configuração forecastDays ao construtor.
 builder.Services.AddScoped<IForecastCollectionService>(serviceProvider =>
 {
     return new ForecastCollectionService(
