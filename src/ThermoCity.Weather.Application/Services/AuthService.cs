@@ -21,6 +21,9 @@ public class AuthService : IAuthService
     public async Task<User> RegisterAsync(
         AuthCredentials credentials)
     {
+        if (string.IsNullOrWhiteSpace(credentials.Username) || string.IsNullOrWhiteSpace(credentials.Password))
+            throw new InvalidInputException("Nome de usuário e senha são obrigatórios.");
+
         var existing = await _userRepository.FindByUsernameAsync(credentials.Username);
 
         if (existing is not null)
@@ -41,6 +44,9 @@ public class AuthService : IAuthService
     public async Task<User?> ValidateCredentialsAsync(
         AuthCredentials credentials)
     {
+        if (string.IsNullOrWhiteSpace(credentials.Username) || string.IsNullOrWhiteSpace(credentials.Password))
+            throw new InvalidInputException("Nome de usuário e senha são obrigatórios.");
+
         var user = await _userRepository.FindByUsernameAsync(credentials.Username);
 
         if (user is null)

@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using ThermoCity.Weather.Api.Controllers;
+using ThermoCity.Weather.Application.Exceptions;
 using ThermoCity.Weather.Application.Interfaces;
 using ThermoCity.Weather.Domain.Entities;
 using ThermoCity.Weather.Domain.Enums;
@@ -208,24 +209,21 @@ public class DailySummariesControllerTests
     }
 
     [Fact]
-    public async Task GetByPeriod_ShouldReturnBadRequest_WhenEndDateIsBeforeStartDate()
+    public async Task GetByPeriod_ShouldThrowInvalidInputException_WhenEndDateIsBeforeStartDate()
     {
         // Arrange
         var startDate = new DateOnly(2026, 11, 10);
         var endDate = new DateOnly(2026, 11, 1);
 
-        // Act
-        var result = await _controller.GetByPeriod(
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<InvalidInputException>(() => _controller.GetByPeriod(
             WeatherSource.OpenWeather,
             startDate,
-            endDate);
-
-        // Assert
-        var badRequestResult = Assert.IsType<BadRequestObjectResult>(result.Result);
+            endDate));
 
         Assert.Equal(
             "A data final deve ser igual ou posterior à inicial.",
-            badRequestResult.Value);
+            ex.Message);
 
         _repositoryMock.Verify(
             x => x.GetByPeriodAsync(

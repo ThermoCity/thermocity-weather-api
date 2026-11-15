@@ -16,7 +16,7 @@ public class WeatherEndpointsTests
     {
         // Arrange
         using var factory = new ThermoCityApiFactory();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAuthenticatedClient();
 
         factory.WeatherReadingRepositoryMock
             .Setup(x => x.GetLatestAsync(
@@ -51,7 +51,7 @@ public class WeatherEndpointsTests
     {
         // Arrange
         using var factory = new ThermoCityApiFactory();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAuthenticatedClient();
 
         factory.WeatherReadingRepositoryMock
             .Setup(x => x.GetLatestAsync(
@@ -72,7 +72,7 @@ public class WeatherEndpointsTests
     {
         // Arrange
         using var factory = new ThermoCityApiFactory();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAuthenticatedClient();
 
         var startDate = new DateTime(2026, 11, 10, 0, 0, 0, DateTimeKind.Utc);
         var endDate = new DateTime(2026, 11, 11, 0, 0, 0, DateTimeKind.Utc);
@@ -117,7 +117,7 @@ public class WeatherEndpointsTests
     {
         // Arrange
         using var factory = new ThermoCityApiFactory();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAuthenticatedClient();
 
         // Act
         var response = await client.GetAsync(
@@ -142,7 +142,7 @@ public class WeatherEndpointsTests
     {
         // Arrange
         using var factory = new ThermoCityApiFactory();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAuthenticatedClient();
 
         var startDate = new DateTime(2026, 11, 10);
         var endDate = new DateTime(2026, 11, 12);
@@ -187,7 +187,7 @@ public class WeatherEndpointsTests
     {
         // Arrange
         using var factory = new ThermoCityApiFactory();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAuthenticatedClient();
 
         // Act
         var response = await client.GetAsync(
@@ -212,7 +212,7 @@ public class WeatherEndpointsTests
     {
         // Arrange
         using var factory = new ThermoCityApiFactory();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAuthenticatedClient();
 
         var date = new DateOnly(2026, 11, 10);
 
@@ -244,7 +244,7 @@ public class WeatherEndpointsTests
     {
         // Arrange
         using var factory = new ThermoCityApiFactory();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAuthenticatedClient();
 
         var date = new DateOnly(2026, 11, 10);
 
@@ -268,7 +268,7 @@ public class WeatherEndpointsTests
     {
         // Arrange
         using var factory = new ThermoCityApiFactory();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAuthenticatedClient();
 
         var startDate = new DateOnly(2026, 11, 10);
         var endDate = new DateOnly(2026, 11, 12);
@@ -304,7 +304,7 @@ public class WeatherEndpointsTests
     {
         // Arrange
         using var factory = new ThermoCityApiFactory();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAuthenticatedClient();
 
         // Act
         var response = await client.GetAsync(
@@ -322,5 +322,38 @@ public class WeatherEndpointsTests
                 It.IsAny<DateTime>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task GetReadings_ShouldReturnUnauthorized_WhenUnauthenticated()
+    {
+        using var factory = new ThermoCityApiFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/api/readings/latest");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetForecasts_ShouldReturnUnauthorized_WhenUnauthenticated()
+    {
+        using var factory = new ThermoCityApiFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/api/forecasts?source=OpenWeather&startDate=2026-11-10&endDate=2026-11-12");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetDailySummaries_ShouldReturnUnauthorized_WhenUnauthenticated()
+    {
+        using var factory = new ThermoCityApiFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/api/daily-summaries/2026-11-10");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 }

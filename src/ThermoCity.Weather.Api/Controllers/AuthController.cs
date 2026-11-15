@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using ThermoCity.Weather.Application.Exceptions;
 using ThermoCity.Weather.Application.Interfaces;
 using ThermoCity.Weather.Application.Models;
 using ThermoCity.Weather.Api.Models.Auth;
@@ -30,9 +31,13 @@ public class AuthController : ControllerBase
     [HttpPost("register")]
     [AllowAnonymous]
     [ProducesResponseType(StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Register(AuthRequest request)
     {
+        if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
+            throw new InvalidInputException("Nome de usuário e senha são obrigatórios.");
+
         _logger.LogInformation(
             "Recebida solicitação para cadastrar usuário {Username}",
             request.Username);
@@ -53,9 +58,13 @@ public class AuthController : ControllerBase
     [HttpPost("signin")]
     [AllowAnonymous]
     [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> SignIn(AuthRequest request)
     {
+        if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
+            throw new InvalidInputException("Nome de usuário e senha são obrigatórios.");
+
         _logger.LogInformation(
             "Recebida tentativa de autenticação do usuário {Username}",
             request.Username);

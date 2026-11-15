@@ -1,11 +1,14 @@
 
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using ThermoCity.Weather.Application.Exceptions;
 using ThermoCity.Weather.Application.Interfaces;
 using ThermoCity.Weather.Domain.Entities;
 using ThermoCity.Weather.Domain.Enums;
 
 namespace ThermoCity.Weather.Api.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/forecasts")]
 public class ForecastsController : ControllerBase
@@ -23,7 +26,8 @@ public class ForecastsController : ControllerBase
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyCollection<DailyForecast>), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<IReadOnlyCollection<DailyForecast>>> GetByPeriod(
         [FromQuery] WeatherSource source,
         [FromQuery] DateOnly startDate,
@@ -31,7 +35,7 @@ public class ForecastsController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         if (endDate < startDate)
-            return BadRequest("A data final deve ser igual ou posterior à inicial.");
+            throw new InvalidInputException("A data final deve ser igual ou posterior à inicial.");
 
         var forecasts = await _repository.GetByPeriodAsync(
             source,

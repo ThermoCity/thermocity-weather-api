@@ -104,4 +104,24 @@ public class AuthServiceTests
         Assert.NotNull(result);
         Assert.Equal("user", result.Username);
     }
+
+    [Theory]
+    [InlineData("", "pwd")]
+    [InlineData("user", "")]
+    public async Task RegisterAsync_ShouldThrowInvalidInputException_WhenCredentialsAreEmpty(string username, string password)
+    {
+        var credentials = new AuthCredentials(username, password);
+
+        await Assert.ThrowsAsync<InvalidInputException>(() => _service.RegisterAsync(credentials));
+    }
+
+    [Theory]
+    [InlineData("", "pwd")]
+    [InlineData("user", "")]
+    public async Task ValidateCredentialsAsync_ShouldThrowInvalidInputException_WhenCredentialsAreEmpty(string username, string password)
+    {
+        var credentials = new AuthCredentials(username, password);
+
+        await Assert.ThrowsAsync<InvalidInputException>(() => _service.ValidateCredentialsAsync(credentials));
+    }
 }

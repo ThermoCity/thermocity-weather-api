@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
+using ThermoCity.Weather.Application.Exceptions;
 using ThermoCity.Weather.Application.Interfaces;
 
 namespace ThermoCity.Weather.Api.Services;
@@ -21,6 +22,9 @@ public class TokenService : ITokenService
 
     public string GenerateToken(string username)
     {
+        if (string.IsNullOrWhiteSpace(username))
+            throw new InvalidInputException("Nome de usuário não informado para geração de token.");
+
         var key = _configuration["Jwt:Key"]
             ?? throw new InvalidOperationException("Jwt:Key não configurada.");
 

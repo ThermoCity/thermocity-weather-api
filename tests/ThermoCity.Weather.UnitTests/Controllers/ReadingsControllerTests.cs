@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using ThermoCity.Weather.Api.Controllers;
+using ThermoCity.Weather.Application.Exceptions;
 using ThermoCity.Weather.Application.Interfaces;
 using ThermoCity.Weather.Domain.Entities;
 using ThermoCity.Weather.Domain.Enums;
@@ -146,24 +147,21 @@ public class ReadingsControllerTests
     }
 
     [Fact]
-    public async Task GetByPeriod_ShouldReturnBadRequest_WhenEndDateIsBeforeStartDate()
+    public async Task GetByPeriod_ShouldThrowInvalidInputException_WhenEndDateIsBeforeStartDate()
     {
         // Arrange
         var startDate = new DateTimeOffset(2026, 11, 11, 0, 0, 0, TimeSpan.Zero);
         var endDate = new DateTimeOffset(2026, 11, 10, 0, 0, 0, TimeSpan.Zero);
 
-        // Act
-        var result = await _controller.GetByPeriod(
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<InvalidInputException>(() => _controller.GetByPeriod(
             WeatherSource.OpenWeather,
             startDate,
-            endDate);
-
-        // Assert
-        var badRequestResult = Assert.IsType<BadRequestObjectResult>(result.Result);
+            endDate));
 
         Assert.Equal(
             "A data final deve ser posterior à data inicial.",
-            badRequestResult.Value);
+            ex.Message);
 
         _repositoryMock.Verify(
             x => x.GetByPeriodAsync(
@@ -175,19 +173,20 @@ public class ReadingsControllerTests
     }
 
     [Fact]
-    public async Task GetByPeriod_ShouldReturnBadRequest_WhenDatesAreEqual()
+    public async Task GetByPeriod_ShouldThrowInvalidInputException_WhenDatesAreEqual()
     {
         // Arrange
         var date = new DateTimeOffset(2026, 11, 10, 0, 0, 0, TimeSpan.Zero);
 
-        // Act
-        var result = await _controller.GetByPeriod(
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<InvalidInputException>(() => _controller.GetByPeriod(
             WeatherSource.OpenWeather,
             date,
-            date);
+            date));
 
-        // Assert
-        Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Equal(
+            "A data final deve ser posterior à data inicial.",
+            ex.Message);
 
         _repositoryMock.Verify(
             x => x.GetByPeriodAsync(

@@ -1,11 +1,14 @@
 
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using ThermoCity.Weather.Application.Exceptions;
 using ThermoCity.Weather.Application.Interfaces;
 using ThermoCity.Weather.Domain.Entities;
 using ThermoCity.Weather.Domain.Enums;
 
 namespace ThermoCity.Weather.Api.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/daily-summaries")]
 public class DailySummariesController : ControllerBase
@@ -53,7 +56,7 @@ public class DailySummariesController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         if (endDate < startDate)
-            return BadRequest("A data final deve ser igual ou posterior à inicial.");
+            throw new InvalidInputException("A data final deve ser igual ou posterior à inicial.");
 
         var summaries = await _repository.GetByPeriodAsync(
             source,

@@ -1,11 +1,14 @@
 
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using ThermoCity.Weather.Application.Exceptions;
 using ThermoCity.Weather.Application.Interfaces;
 using ThermoCity.Weather.Domain.Entities;
 using ThermoCity.Weather.Domain.Enums;
 
 namespace ThermoCity.Weather.Api.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/readings")]
 public class ReadingsController : ControllerBase
@@ -51,7 +54,7 @@ public class ReadingsController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         if (endDate <= startDate)
-            return BadRequest("A data final deve ser posterior à data inicial.");
+            throw new InvalidInputException("A data final deve ser posterior à data inicial.");
 
         var readings = await _repository.GetByPeriodAsync(
             source,

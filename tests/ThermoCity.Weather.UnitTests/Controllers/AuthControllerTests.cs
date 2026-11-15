@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using ThermoCity.Weather.Api.Controllers;
 using ThermoCity.Weather.Api.Models.Auth;
+using ThermoCity.Weather.Application.Exceptions;
 using ThermoCity.Weather.Application.Interfaces;
 using ThermoCity.Weather.Application.Models;
 using ThermoCity.Weather.Domain.Entities;
@@ -74,5 +75,26 @@ public class AuthControllerTests
         var result = await _controller.SignIn(request);
 
         Assert.IsType<UnauthorizedResult>(result);
+    }
+
+    [Theory]
+    [InlineData("", "pwd")]
+    [InlineData("user", "")]
+    [InlineData("   ", "pwd")]
+    public async Task Register_ShouldThrowInvalidInputException_WhenCredentialsAreEmpty(string username, string password)
+    {
+        var request = new AuthRequest { Username = username, Password = password };
+
+        await Assert.ThrowsAsync<InvalidInputException>(() => _controller.Register(request));
+    }
+
+    [Theory]
+    [InlineData("", "pwd")]
+    [InlineData("user", "")]
+    public async Task SignIn_ShouldThrowInvalidInputException_WhenCredentialsAreEmpty(string username, string password)
+    {
+        var request = new AuthRequest { Username = username, Password = password };
+
+        await Assert.ThrowsAsync<InvalidInputException>(() => _controller.SignIn(request));
     }
 }
