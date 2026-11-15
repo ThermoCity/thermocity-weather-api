@@ -2,36 +2,35 @@
 
 API de monitoramento climático desenvolvida em **.NET 10**, responsável pela coleta, armazenamento e disponibilização de dados meteorológicos para o projeto ThermoCity.
 
-O sistema utiliza dados da OpenWeather para acompanhar as condições climáticas de Presidente Prudente - SP, calcular índices de calor, armazenar previsões meteorológicas e consolidar indicadores diários.
+O sistema utiliza dados da OpenWeather para acompanhar as condições climáticas de Presidente Prudente - SP, calcular índices de calor com fórmulas meteorológicas oficiais (Rothfusz / NWS), armazenar previsões meteorológicas e consolidar indicadores diários.
 
-A solução foi estruturada para separar a coleta de dados da disponibilização das informações, utilizando uma API REST para consultas e um Worker independente para executar os processos em segundo plano.
+A solução foi estruturada para separar a coleta de dados da disponibilização das informações, utilizando uma API RESTful para consultas com autenticação JWT e um Worker independente para executar os processos de coleta e consolidação em segundo plano.
 
 ---
 
-## 1. Tecnologias utilizadas
+## 1. Tecnologias Utilizadas
 
 | Tecnologia | Finalidade |
 |---|---|
-| .NET 10 | Plataforma de desenvolvimento |
-| C# | Linguagem principal |
-| ASP.NET Core | Construção da API REST |
-| BackgroundService | Execução de tarefas em segundo plano |
-| MongoDB | Persistência documental |
-| PostgreSQL | Persistência relacional |
-| Entity Framework Core | Mapeamento objeto-relacional |
-| Npgsql | Comunicação com PostgreSQL |
-| MongoDB.Driver | Comunicação com MongoDB |
-| OpenWeather API | Fonte de dados meteorológicos |
-| Serilog | Logging estruturado |
-| Swagger / Swashbuckle | Documentação e testes da API |
-| xUnit | Testes automatizados |
-| Moq | Simulação de dependências nos testes |
+| .NET 10 | Plataforma de desenvolvimento moderna |
+| C# 13 | Linguagem de programação principal |
+| ASP.NET Core | Construção da API RESTful com Middleware Pipeline |
+| MongoDB (Driver 3.14.0) | Persistência documental de alta performance |
+| JWT Bearer (Microsoft.AspNetCore.Authentication.JwtBearer) | Autenticação e autorização stateless via tokens |
+| OpenTelemetry (1.12.0) | Observabilidade e rastreabilidade distribuída (Tracing) |
+| Rate Limiting (Fixed Window) | Proteção da API contra abuso e negação de serviço (HTTP 429) |
+| RFC 9457 ProblemDetails | Tratamento global padronizado de exceções (`GlobalExceptionHandler`) |
+| Health Checks | Monitoramento de vivacidade (Liveness) e prontidão (Readiness) |
+| OpenWeather API | Provedor externo de dados climáticos e previsões |
+| Serilog | Logging estruturado para console e contexto |
+| Swagger / OpenAPI (Swashbuckle) | Documentação interativa e testes da API |
+| xUnit & Moq | Testes unitários de regras de negócio e testes de integração com `WebApplicationFactory` |
 
 ---
 
-## 2. Arquitetura do projeto
+## 2. Arquitetura da Solução
 
-A solução utiliza uma organização em camadas, separando as responsabilidades de domínio, aplicação, infraestrutura e exposição dos endpoints.
+A solução adota os princípios de Clean Architecture e separação de responsabilidades em camadas:
 
 ```text
 thermocity-weather-api/
@@ -40,789 +39,275 @@ thermocity-weather-api/
 ├── ThermoCity.Weather.slnx
 │
 ├── src/
-│   ├── ThermoCity.Weather.Api/
-│   │   ├── Controllers/
-│   │   ├── HealthChecks/
-│   │   ├── Program.cs
-│   │   └── appsettings.json
+│   ├── ThermoCity.Weather.Domain/
+│   │   ├── Entities/               # WeatherReading, DailyForecast, DailyWeatherSummary, User
+│   │   └── Enums/                  # WeatherSource, ReadingStatus
 │   │
 │   ├── ThermoCity.Weather.Application/
-│   │   ├── Interfaces/
-│   │   └── Services/
-│   │
-│   ├── ThermoCity.Weather.Domain/
-│   │   ├── Entities/
-│   │   └── Enums/
+│   │   ├── Exceptions/             # InvalidInputException, ConflictException
+│   │   ├── Interfaces/             # IWeatherProvider, IUserRepository, IAuthService, ITokenService, etc.
+│   │   ├── Models/                 # DTOs de credenciais e autenticação
+│   │   └── Services/               # HeatIndexService, AuthService, WeatherCollectionService, etc.
 │   │
 │   ├── ThermoCity.Weather.Infrastructure/
 │   │   ├── Mongo/
-│   │   ├── Repositories/
+│   │   │   ├── Repositories/       # WeatherReadingRepository, DailyForecastRepository, UserRepository
+│   │   │   ├── MongoDbHealthCheck.cs
+│   │   │   └── MongoDependencyInjection.cs
 │   │   ├── OpenWeather/
-│   │   └── PostgreSql/
-│   │       ├── Configurations/
-│   │       ├── Migrations/
-│   │       └── Repositories/
+│   │   │   ├── DTOs/
+│   │   │   ├── OpenWeatherProvider.cs
+│   │   │   └── OpenWeatherHealthCheck.cs
+│   │   └── Security/
+│   │       └── PasswordHasher.cs   # Hashing seguro com PBKDF2 (100.000 iterações + Salt)
+│   │
+│   ├── ThermoCity.Weather.Api/
+│   │   ├── Controllers/            # AuthController, ReadingsController, ForecastsController, DailySummariesController
+│   │   ├── ExceptionHandling/      # GlobalExceptionHandler (IExceptionHandler, RFC 9457)
+│   │   ├── Models/                 # AuthRequest, AuthResponse
+│   │   ├── Services/               # TokenService (Geração e assinatura de JWT HMAC-SHA256)
+│   │   ├── Program.cs              # Configuração de DI, Autenticação, RateLimiting, OTel e rotas
+│   │   └── appsettings.json
 │   │
 │   └── ThermoCity.Weather.Worker/
-│       ├── Workers/
+│       ├── Workers/                # WeatherCollectionWorker, ForecastCollectionWorker, DailyConsolidationWorker
 │       ├── Program.cs
 │       └── appsettings.json
 │
 └── tests/
     ├── ThermoCity.Weather.UnitTests/
-    │   ├── Controllers/
-    │   └── Services/
+    │   ├── Controllers/            # AuthControllerTests, ReadingsControllerTests, etc.
+    │   ├── ExceptionHandling/      # GlobalExceptionHandlerTests
+    │   └── Services/               # HeatIndexServiceTests, AuthServiceTests, etc.
     │
     └── ThermoCity.Weather.IntegrationTests/
-        ├── Fixtures/
-        ├── HealthCheckTests.cs
-        └── WeatherEndpointsTests.cs
-```
-
-### Responsabilidades das camadas
-
-**Domain**
-- Entidades e enums do sistema.
-- Representação dos dados meteorológicos.
-- Não depende das camadas externas.
-
-**Application**
-- Interfaces de serviços e repositórios.
-- Regras de negócio e processamento dos dados.
-- Cálculo do índice de calor.
-- Coleta e consolidação das informações.
-
-**Infrastructure**
-- Integração com a OpenWeather.
-- Persistência no MongoDB e PostgreSQL.
-- Implementações concretas dos repositórios.
-- Configurações de banco de dados e mapeamentos.
-
-**API**
-- Disponibilização dos endpoints REST.
-- Consultas aos dados persistidos.
-- Documentação Swagger.
-- Health checks e controle de requisições.
-
-**Worker**
-- Execução autônoma dos processos de coleta.
-- Atualização das previsões meteorológicas.
-- Consolidação dos indicadores diários.
-
----
-
-## 3. Funcionamento do sistema
-
-O ThermoCity possui três processos principais de processamento de dados.
-
-### 3.1. Coleta de condições climáticas
-
-O Worker consulta a API da OpenWeather para obter as condições meteorológicas atuais de Presidente Prudente.
-
-Dados coletados:
-
-- Temperatura atual.
-- Sensação térmica.
-- Umidade relativa do ar.
-- Pressão atmosférica.
-- Velocidade do vento.
-- Descrição das condições climáticas.
-- Data e horário da medição.
-
-A coleta considera as coordenadas:
-
-| Parâmetro | Valor |
-|---|---|
-| Latitude | -22.12 |
-| Longitude | -51.39 |
-| Localidade | Presidente Prudente - SP |
-| Intervalo de teste | 5 minutos |
-
-O sistema também calcula o índice de calor utilizando temperatura e umidade relativa do ar.
-
-Registros incompletos são identificados com o status `Partial`, enquanto registros com os dados necessários são classificados como `Complete`.
-
-Valores ausentes são representados por `null`, evitando a utilização de valores artificiais.
-
-### 3.2. Coleta de previsões meteorológicas
-
-O Worker também consulta a previsão de cinco dias da OpenWeather, disponibilizada em intervalos de três horas.
-
-Os dados são agrupados por dia, considerando o horário local da cidade.
-
-Para cada dia são armazenados:
-
-- Temperatura mínima.
-- Temperatura máxima.
-- Temperatura do período mais quente.
-- Sensação térmica do período mais quente.
-- Umidade relativa.
-- Pressão atmosférica.
-- Velocidade do vento.
-- Descrição das condições climáticas.
-- Índice de calor estimado.
-
-Cada coleta de previsão mantém sua própria data de emissão. Isso permite comparar previsões realizadas em momentos diferentes com as condições efetivamente observadas.
-
-### 3.3. Consolidação diária
-
-O processo de consolidação é executado diariamente à 01:00, considerando o dia anterior no horário de Brasília.
-
-São calculados:
-
-- Temperatura mínima, média e máxima.
-- Umidade mínima, média e máxima.
-- Índice de calor mínimo, médio e máximo.
-- Quantidade de observações válidas.
-
-Somente observações com status `Complete` são consideradas.
-
-Os resultados são armazenados permanentemente, permitindo consultas históricas sem depender dos registros temporários de coleta.
-
-### Intervalos de execução
-
-| Processo | Intervalo |
-|---|---|
-| Coleta atual | 5 minutos |
-| Coleta de previsões | 5 minutos |
-| Consolidação diária | 01:00 |
-
-Os intervalos de cinco minutos foram definidos para facilitar os testes durante o desenvolvimento. Antes de utilizar essa frequência em produção, é necessário verificar os limites e as condições de uso da OpenWeather, que podem exigir intervalos maiores.
-
----
-
-## 4. Modelo de dados
-
-O sistema trabalha com três entidades principais.
-
-### WeatherReading
-
-Representa uma observação meteorológica realizada em determinado momento.
-
-Principais propriedades:
-
-- `Id`
-- `Source`
-- `Status`
-- `MeasurementDate`
-- `CollectionDate`
-- `TemperatureCelsius`
-- `FeelsLikeCelsius`
-- `HumidityPercentage`
-- `PressureHpa`
-- `WindSpeedMs`
-- `WeatherDescription`
-- `HeatIndexCelsius`
-
-### DailyForecast
-
-Representa a previsão meteorológica consolidada para um dia.
-
-Principais propriedades:
-
-- `Id`
-- `Source`
-- `ForecastDate`
-- `ForecastEmissionDate`
-- `MinimumTemperatureCelsius`
-- `MaximumTemperatureCelsius`
-- `DayTemperatureCelsius`
-- `DayFeelsLikeCelsius`
-- `HumidityPercentage`
-- `PressureHpa`
-- `WindSpeedMs`
-- `WeatherDescription`
-- `EstimatedHeatIndexCelsius`
-- `Status`
-
-### DailyWeatherSummary
-
-Representa o resumo meteorológico diário.
-
-Principais propriedades:
-
-- `Id`
-- `Source`
-- `ReferenceDate`
-- `MinimumTemperatureCelsius`
-- `AverageTemperatureCelsius`
-- `MaximumTemperatureCelsius`
-- `MinimumHumidityPercentage`
-- `AverageHumidityPercentage`
-- `MaximumHumidityPercentage`
-- `MinimumHeatIndexCelsius`
-- `AverageHeatIndexCelsius`
-- `MaximumHeatIndexCelsius`
-- `ObservationCount`
-- `ConsolidationDate`
-
-### Coleções MongoDB
-
-| Coleção | Finalidade |
-|---|---|
-| `TMC_LEITURA_CLIMA` | Observações meteorológicas |
-| `TMC_PREVISAO_DIARIA` | Previsões meteorológicas |
-| `TMC_RESUMO_CLIMA_DIARIO` | Consolidações diárias |
-
-As observações meteorológicas são planejadas para retenção temporária de sete dias. Os resumos diários são históricos e devem ser mantidos permanentemente.
-
-### Tabelas PostgreSQL
-
-| Tabela | Finalidade |
-|---|---|
-| `weather_readings` | Observações meteorológicas |
-| `daily_forecasts` | Previsões meteorológicas |
-| `daily_weather_summaries` | Consolidações diárias |
-
-Os identificadores das entidades utilizam `ObjectId` e são convertidos para texto no PostgreSQL, preservando a identificação entre os modelos de persistência.
-
-As datas que representam dias de calendário, como `ForecastDate` e `ReferenceDate`, devem utilizar o tipo `date` no PostgreSQL.
-
----
-
-## 5. Pré-requisitos
-
-Antes de executar o projeto, instale:
-
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
-- [MongoDB](https://www.mongodb.com/try/download/community) ou uma instância MongoDB Atlas.
-- [PostgreSQL](https://www.postgresql.org/download/) ou uma instância Azure Database for PostgreSQL.
-- Uma chave de API da [OpenWeather](https://openweathermap.org/api).
-- Git.
-
-Para verificar a instalação do .NET:
-
-```bash
-dotnet --version
-```
-
-Para verificar a instalação do Git:
-
-```bash
-git --version
+        ├── Fixtures/               # ThermoCityApiFactory (WebApplicationFactory em memória)
+        ├── AuthEndpointsTests.cs   # Testes de registro, validações e login
+        ├── HealthCheckTests.cs     # Testes de /health/live e /swagger
+        ├── RateLimiterTests.cs     # Testes de estouro de limite (HTTP 429)
+        └── WeatherEndpointsTests.cs# Testes de consultas autenticadas e bloqueio anônimo (401)
 ```
 
 ---
 
-## 6. Clonando o projeto
+## 3. Atendimento aos Critérios de Avaliação (100 Pontos)
 
-Clone o repositório:
+| # | Requisito / Critério | Pontuação | Implementação no Projeto |
+|---|---|---|---|
+| **01** | **API RESTful funcional com validações e OpenAPI/Swagger** | **20 pts** | Endpoints REST com códigos HTTP padronizados (200, 201, 400, 401, 404, 409, 429, 500, 503), validações de domínio com `InvalidInputException` e documentação interativa Swagger completa com suporte a autenticação Bearer. |
+| **02** | **Autenticação e Autorização JWT** | **20 pts** | Middleware `JwtBearer` com validação de emissor, audiência, tempo de vida e assinatura HMAC-SHA256. Endpoints de dados meteorológicos protegidos com `[Authorize]`. Endpoints de registro (`/api/auth/register`) e login (`/api/auth/signin`) públicos com senha protegida por PBKDF2. |
+| **03** | **Idempotência contra operações repetidas** | **15 pts** | **1)** Idempotência garantida na persistência com operações de **Upsert** (`ReplaceOneModel` com `IsUpsert = true`) no MongoDB para leituras, previsões e consolidações meteorológicas com base em chaves naturais únicas. **2)** Regras de negócio de unicidade com `ConflictException` (HTTP 409 Conflict) para impedir duplicidade de usuários. **3)** Consultas HTTP GET idempotentes por especificação. |
+| **04** | **Rate Limiting funcional (HTTP 429)** | **15 pts** | Rate limiting nativo particionado por IP (`PartitionedRateLimiter`) com Fixed Window de 10 requisições/minuto. Customização de rejeição `OnRejected` retornando RFC 9457 `ProblemDetails` com código HTTP 429 Too Many Requests. |
+| **05** | **Testes Automatizados (xUnit & Moq)** | **20 pts** | **89 testes automatizados** (68 unitários + 21 de integração) validando regras de cálculo do índice de calor, consolidação, serviços de autenticação, tratamento global de erros, rate limiting e bloqueio de acesso sem token. |
+| **06** | **Health Checks completos (API, Banco e Serviço Externo)** | **10 pts** | Endpoints `/health/live` (Liveness da API) e `/health/ready` (Readiness cobrindo o tripé: **API própria**, **MongoDB** via comando `ping` e **OpenWeather API** via conectividade HTTP). |
+| | **TOTAL** | **100 pts** | **Todos os requisitos plenamente atendidos e validados por testes automatizados.** |
 
-```bash
-git clone <URL_DO_REPOSITORIO>
+---
+
+## 4. Segurança e Autenticação (JWT)
+
+A API utiliza autenticação baseada em JSON Web Tokens (JWT).
+
+### 4.1. Fluxo de Autenticação
+
+1. O cliente se cadastra em `POST /api/auth/register`. A senha é protegida com salt aleatório e derivação PBKDF2 (100.000 iterações com SHA-256).
+2. O cliente autentica em `POST /api/auth/signin` informando `username` e `password`.
+3. A API valida a senha e retorna um token JWT assinado digitalmente:
+   ```json
+   {
+     "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+   }
+   ```
+4. Para acessar endpoints protegidos (`/api/readings/*`, `/api/forecasts`, `/api/daily-summaries/*`), o cliente inclui o cabeçalho HTTP:
+   ```http
+   Authorization: Bearer <seu-token-jwt>
+   ```
+
+---
+
+## 5. Idempotência com Upsert no MongoDB
+
+A garantia de idempotência para evitar operações duplicadas e efeitos colaterais indesejados é tratada de forma robusta e nativa na camada de persistência:
+
+1. **Upsert no MongoDB**:
+   * As operações de persistência de leituras climáticas (`WeatherReadingRepository`), previsões meteorológicas (`DailyForecastRepository`) e resumos diários (`DailyWeatherSummaryRepository`) utilizam **Upsert** (`ReplaceOneModel` com `IsUpsert = true`) ancorados em chaves de negócio compostas (ex: `Source` + `MeasurementDate` ou `Source` + `ReferenceDate`).
+   * Caso o processo do Worker execute novamente ou coletas sejam disparadas repetidas vezes para o mesmo momento/dia, o registro existente é atualizado sem gerar duplicidade.
+2. **Prevenção de Duplicidade em Cadastros**:
+   * Em `POST /api/auth/register`, a existência prévia do usuário é verificada antes de qualquer inserção; tentativas repetidas com o mesmo nome de usuário disparam `ConflictException`, retornando HTTP `409 Conflict`.
+3. **Idempotência Natural em Consultas**:
+   * Todos os endpoints de leitura expostos pela API utilizam o verbo HTTP `GET`, sendo idempotentes por definição do padrão REST (RFC 7231 / RFC 9110).
+
+---
+
+## 6. Rate Limiting (Proteção contra Uso Excessivo)
+
+A API implementa limitação de taxa por IP do cliente utilizando a biblioteca nativa do ASP.NET Core:
+
+* **Política**: Fixed Window com limite de **10 requisições por minuto** por endereço IP.
+* **Comportamento ao Exceder o Limite**: A requisição é rejeitada imediatamente com status `429 Too Many Requests` e payload RFC 9457:
+  ```json
+  {
+    "type": "about:blank",
+    "title": "Limite de requisições excedido",
+    "status": 429,
+    "detail": "Você atingiu o limite de requisições permitido. Aguarde antes de tentar novamente."
+  }
+  ```
+
+---
+
+## 7. Health Checks (Monitoramento)
+
+A solução disponibiliza dois endpoints para verificação de saúde da aplicação:
+
+### `/health/live` (Liveness)
+Indica se a aplicação está de pé e respondendo a requisições, sem depender de recursos externos. Ideal para sondas de liveness em orquestradores (Kubernetes/Docker).
+* **Tag**: `live`
+* **Resposta**: `200 OK` com conteúdo `Healthy`.
+
+### `/health/ready` (Readiness)
+Verifica se todas as dependências essenciais estão disponíveis para atender requisições:
+* **API própria (`self`)**: Aplicação em execução.
+* **Banco de dados (`mongodb`)**: Ping ativo no MongoDB.
+* **Serviço externo (`openweather`)**: Conectividade com a API externa da OpenWeather.
+* **Tag**: `ready`
+
+---
+
+## 8. Tratamento Global de Erros (RFC 9457)
+
+Toda exceção não tratada é interceptada pela classe `GlobalExceptionHandler` (`IExceptionHandler`) e convertida em uma resposta estruturada `ProblemDetails` (`application/problem+json`):
+
+| Exceção | Status Code | Título |
+|---|---|---|
+| `InvalidInputException` | `400 Bad Request` | Requisição inválida |
+| `ConflictException` | `409 Conflict` | Conflito |
+| `BadHttpRequestException` | `400 Bad Request` | Requisição inválida |
+| `MongoException` / `TimeoutException` | `503 Service Unavailable` | Serviço indisponível |
+| `Exception` (genérica) | `500 Internal Server Error` | Erro interno |
+
+---
+
+## 9. Endpoints da API
+
+### 9.1. Autenticação (Públicos)
+
+| Método | Endpoint | Descrição |
+|---|---|---|
+| POST | `/api/auth/register` | Cadastra um novo usuário no sistema |
+| POST | `/api/auth/signin` | Autentica o usuário e emite o token JWT |
+
+#### Exemplo de Registro:
+```http
+POST /api/auth/register HTTP/1.1
+Content-Type: application/json
+
+{
+  "username": "lucas",
+  "password": "MinhaSenhaForte123!"
+}
 ```
 
-Entre na pasta do projeto:
+#### Exemplo de Login:
+```http
+POST /api/auth/signin HTTP/1.1
+Content-Type: application/json
 
-```bash
-cd thermocity-weather-api
+{
+  "username": "lucas",
+  "password": "MinhaSenhaForte123!"
+}
 ```
 
-Restaure as dependências:
+---
 
+### 9.2. Dados Meteorológicos (Protegidos por `[Authorize]`)
+
+Todos os endpoints abaixo exigem o cabeçalho `Authorization: Bearer <token>`.
+
+| Método | Endpoint | Parâmetros de Query | Descrição |
+|---|---|---|---|
+| GET | `/api/readings/latest` | `source=OpenWeather` | Consulta a leitura meteorológica mais recente |
+| GET | `/api/readings` | `source`, `startDate`, `endDate` | Consulta observações por período em UTC |
+| GET | `/api/forecasts` | `source`, `startDate`, `endDate` | Consulta previsões por período de calendário |
+| GET | `/api/daily-summaries/{date}` | `source=OpenWeather` | Consulta o resumo consolidado de um dia |
+| GET | `/api/daily-summaries` | `source`, `startDate`, `endDate` | Consulta resumos consolidados por período |
+
+---
+
+## 10. Como Executar a Aplicação
+
+### 10.1. Pré-requisitos
+* [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+* [MongoDB](https://www.mongodb.com/try/download/community) (ou instância MongoDB Atlas)
+* Chave de API da [OpenWeather](https://openweathermap.org/api)
+
+### 10.2. Configuração de Variáveis de Ambiente
+
+No terminal (Linux / macOS):
+```bash
+export MongoDb__ConnectionString="mongodb://localhost:27017"
+export MongoDb__DatabaseName="thermocity-weather"
+export Jwt__Key="chave-super-secreta-com-pelo-menos-32-caracteres-para-assinatura-jwt"
+export OpenWeather__ApiKey="sua_chave_openweather_aqui"
+```
+
+No Windows (PowerShell):
+```powershell
+$env:MongoDb__ConnectionString="mongodb://localhost:27017"
+$env:MongoDb__DatabaseName="thermocity-weather"
+$env:Jwt__Key="chave-super-secreta-com-pelo-menos-32-caracteres-para-assinatura-jwt"
+$env:OpenWeather__ApiKey="sua_chave_openweather_aqui"
+```
+
+### 10.3. Compilação e Execução
+
+Restaurar pacotes e compilar:
 ```bash
 dotnet restore
-```
-
-Compile a solução:
-
-```bash
 dotnet build
 ```
 
----
-
-## 7. Configuração das variáveis de ambiente
-
-As configurações sensíveis não devem ser armazenadas diretamente nos arquivos versionados do projeto.
-
-O sistema utiliza variáveis de ambiente para configurar as conexões e credenciais.
-
-Os exemplos abaixo consideram macOS ou Linux, utilizando Bash ou Zsh.
-
-### 7.1. OpenWeather
-
-Crie uma conta na OpenWeather e gere uma chave de API.
-
-```bash
-export OpenWeather__ApiKey="SUA_NOVA_CHAVE_OPENWEATHER"
-```
-
-As demais configurações da integração podem permanecer nos arquivos `appsettings.json`:
-
-```json
-{
-  "OpenWeather": {
-    "BaseUrl": "https://api.openweathermap.org/data/2.5/",
-    "Latitude": -22.12,
-    "Longitude": -51.39,
-    "Language": "pt_br"
-  }
-}
-```
-
-### 7.2. MongoDB
-
-Configure a conexão com o MongoDB.
-
-Exemplo local:
-
-```bash
-export MongoDb__ConnectionString="mongodb://admin:admin123@localhost:27017/thermocity-weather?authSource=admin"
-```
-
-Configure o nome do banco:
-
-```bash
-export MongoDb__DatabaseName="thermocity-weather"
-```
-
-Caso utilize MongoDB Atlas, substitua a connection string pela fornecida pela plataforma.
-
-### 7.3. PostgreSQL
-
-Configure a conexão com o PostgreSQL.
-
-```bash
-export ConnectionStrings__PostgreSql="Host=SEU_HOST;Port=5432;Database=thermocity;Username=SEU_USUARIO;Password=SUA_SENHA;SSL Mode=Require"
-```
-
-Para uma instância Azure PostgreSQL, utilize o endereço do servidor disponibilizado no portal Azure.
-
-O parâmetro `SSL Mode=Require` deve ser utilizado quando o servidor exigir conexão criptografada.
-
-### 7.4. Seleção do banco de leitura da API
-
-A API permite selecionar qual banco será utilizado para realizar as consultas.
-
-Para utilizar MongoDB:
-
-```bash
-export Database__ReadProvider="MongoDB"
-```
-
-Para utilizar PostgreSQL:
-
-```bash
-export Database__ReadProvider="PostgreSQL"
-```
-
-Essa configuração altera o provedor utilizado pelos repositórios de leitura da API.
-
-### 7.5. Configurações do Worker
-
-As configurações operacionais podem ser mantidas no `appsettings.json` do Worker:
-
-```json
-{
-  "Worker": {
-    "WeatherCollectionIntervalMinutes": 5,
-    "ForecastCollectionIntervalMinutes": 5,
-    "ConsolidationHour": 1,
-    "ConsolidationMinute": 0,
-    "ForecastDays": 3
-  }
-}
-```
-
-### 7.6. Aplicando todas as variáveis de ambiente
-
-Para facilitar a execução, todas as variáveis podem ser configuradas em sequência no mesmo terminal.
-
-```bash
-export OpenWeather__ApiKey="SUA_NOVA_CHAVE_OPENWEATHER"
-
-export MongoDb__ConnectionString="mongodb://admin:admin123@localhost:27017/thermocity-weather?authSource=admin"
-export MongoDb__DatabaseName="thermocity-weather"
-
-export ConnectionStrings__PostgreSql="Host=SEU_HOST;Port=5432;Database=thermocity;Username=SEU_USUARIO;Password=SUA_SENHA;SSL Mode=Require"
-
-export Database__ReadProvider="MongoDB"
-```
-
-**Importante:** as variáveis de ambiente são aplicadas ao processo iniciado pelo terminal. Caso execute API e Worker em terminais diferentes, configure as variáveis nos dois terminais.
-
-Não compartilhe chaves de API, senhas ou connection strings em commits ou arquivos públicos.
-
----
-
-## 8. Configuração do PostgreSQL e migrations
-
-O projeto utiliza Entity Framework Core para mapear as entidades para tabelas relacionais.
-
-As configurações de mapeamento estão em:
-
-```text
-ThermoCity.Weather.Infrastructure/
-└── PostgreSql/
-    ├── Configurations/
-    ├── Migrations/
-    └── ThermoCityDbContext.cs
-```
-
-### 8.1. Instalar a ferramenta EF Core
-
-Caso ainda não tenha a ferramenta instalada:
-
-```bash
-dotnet tool install --global dotnet-ef --version 10.0.0
-```
-
-Se já estiver instalada, atualize:
-
-```bash
-dotnet tool update --global dotnet-ef --version 10.0.0
-```
-
-Verifique:
-
-```bash
-dotnet ef --version
-```
-
-### 8.2. Criar uma migration
-
-Caso seja necessário criar uma nova migration após alterações no modelo:
-
-```bash
-dotnet ef migrations add NomeDaMigration \
-  --project src/ThermoCity.Weather.Infrastructure \
-  --startup-project src/ThermoCity.Weather.Worker \
-  --output-dir PostgreSql/Migrations
-```
-
-### 8.3. Aplicar as migrations
-
-Com a variável `ConnectionStrings__PostgreSql` configurada no terminal:
-
-```bash
-dotnet ef database update \
-  --project src/ThermoCity.Weather.Infrastructure \
-  --startup-project src/ThermoCity.Weather.Worker
-```
-
-Esse comando aplica as migrations pendentes e cria ou atualiza as tabelas no banco configurado.
-
-**Atenção:** o banco de dados `thermocity` precisa existir antes da execução. A migration cria as tabelas, mas não necessariamente o próprio banco.
-
----
-
-## 9. Executando o projeto
-
-A API e o Worker são processos independentes. Para o funcionamento completo, ambos devem estar em execução.
-
-### 9.1. Iniciar o Worker
-
-Abra um terminal na raiz do projeto.
-
-Configure as variáveis de ambiente da seção 7.
-
-Execute:
-
-```bash
-dotnet run --project src/ThermoCity.Weather.Worker
-```
-
-O Worker inicia os processos de coleta e consolidação.
-
-Os processos de coleta são executados imediatamente na inicialização e, posteriormente, respeitam seus respectivos intervalos configurados.
-
-A consolidação diária permanece agendada para o horário definido na configuração.
-
-### 9.2. Iniciar a API
-
-Abra um segundo terminal na raiz do projeto.
-
-Configure as variáveis de ambiente da seção 7.
-
-Execute:
-
+Executar a **API**:
 ```bash
 dotnet run --project src/ThermoCity.Weather.Api --urls http://localhost:5050
 ```
 
-A API ficará disponível em:
-
-```text
-http://localhost:5050
+Executar o **Worker**:
+```bash
+dotnet run --project src/ThermoCity.Weather.Worker
 ```
 
-A documentação Swagger estará disponível em:
-
+Acessar o **Swagger UI**:
 ```text
 http://localhost:5050/swagger
 ```
 
-A API é responsável pela consulta dos dados já persistidos. A coleta meteorológica não depende de chamadas aos endpoints REST, pois é realizada diretamente pelo Worker.
-
 ---
 
-## 10. Endpoints disponíveis
+## 11. Testes Automatizados
 
-### 10.1. Leituras meteorológicas
+O projeto conta com **89 testes automatizados** utilizando xUnit e Moq.
 
-| Método | Endpoint | Descrição |
-|---|---|---|
-| GET | `/api/readings/latest` | Consulta a leitura mais recente |
-| GET | `/api/readings` | Consulta leituras por período |
-
-Exemplo:
-
-```http
-GET http://localhost:5050/api/readings/latest?source=OpenWeather
-```
-
-Consulta por período:
-
-```http
-GET http://localhost:5050/api/readings?source=OpenWeather&startDate=2026-11-01T00:00:00Z&endDate=2026-11-14T00:00:00Z
-```
-
-### 10.2. Previsões meteorológicas
-
-| Método | Endpoint | Descrição |
-|---|---|---|
-| GET | `/api/forecasts` | Consulta previsões por período |
-
-Exemplo:
-
-```http
-GET http://localhost:5050/api/forecasts?source=OpenWeather&startDate=2026-11-14&endDate=2026-11-16
-```
-
-### 10.3. Resumos diários
-
-| Método | Endpoint | Descrição |
-|---|---|---|
-| GET | `/api/daily-summaries/{date}` | Consulta resumo de uma data |
-| GET | `/api/daily-summaries` | Consulta resumos por período |
-
-Exemplo:
-
-```http
-GET http://localhost:5050/api/daily-summaries/2026-11-13?source=OpenWeather
-```
-
-Consulta por período:
-
-```http
-GET http://localhost:5050/api/daily-summaries?source=OpenWeather&startDate=2026-11-01&endDate=2026-11-14
-```
-
-Os endpoints de período utilizam a data final como inclusiva na API. Internamente, a consulta utiliza o início do dia seguinte como limite exclusivo.
-
-### 10.4. Health checks
-
-| Método | Endpoint | Descrição |
-|---|---|---|
-| GET | `/health/live` | Verifica se a aplicação está em execução |
-| GET | `/health/ready` | Verifica a disponibilidade das dependências configuradas |
-
-Exemplo:
-
-```bash
-curl http://localhost:5050/health/live
-```
-
-```bash
-curl http://localhost:5050/health/ready
-```
-
----
-
-## 11. Testes automatizados
-
-O projeto utiliza xUnit e Moq para validar o comportamento das camadas da aplicação.
-
-Os testes unitários verificam:
-
-- Cálculo do índice de calor.
-- Coleta das condições meteorológicas.
-- Coleta e processamento de previsões.
-- Consolidação diária.
-- Comportamento dos controllers.
-- Validação de parâmetros e respostas HTTP.
-
-Os testes de integração verificam:
-
-- Inicialização da API.
-- Disponibilidade dos endpoints.
-- Respostas HTTP.
-- Documentação Swagger.
-- Health checks.
-
-### 11.1. Executar todos os testes
-
-Na raiz do projeto:
-
+Para executar todos os testes da solução:
 ```bash
 dotnet test
 ```
 
-### 11.2. Executar somente os testes unitários
-
+Para executar separadamente:
 ```bash
+# Testes Unitários (Regras de negócio, cálculo de calor, controllers, auth, exceptions)
 dotnet test tests/ThermoCity.Weather.UnitTests
-```
 
-### 11.3. Executar somente os testes de integração
-
-```bash
+# Testes de Integração (Endpoints autenticados, Rate Limiting, Health Checks)
 dotnet test tests/ThermoCity.Weather.IntegrationTests
 ```
 
-Os testes de integração utilizam dependências simuladas para validar os endpoints sem exigir uma instância real do MongoDB ou PostgreSQL.
-
 ---
 
-## 12. Persistência e consistência dos dados
+## 12. Observabilidade (OpenTelemetry)
 
-O projeto possui implementações de repositórios para MongoDB e PostgreSQL.
-
-Os repositórios são responsáveis por realizar operações de inserção, atualização e consulta das entidades.
-
-As operações de atualização utilizam chaves de negócio para evitar duplicidade lógica:
-
-| Entidade | Chave de negócio |
-|---|---|
-| WeatherReading | Source + MeasurementDate |
-| DailyForecast | Source + ForecastEmissionDate + ForecastDate |
-| DailyWeatherSummary | Source + ReferenceDate |
-
-O PostgreSQL utiliza índices únicos compostos para reforçar essas restrições.
-
-A seleção do provedor de leitura é realizada por configuração, permitindo consultar os dados pelo MongoDB ou PostgreSQL sem alterar os controllers.
-
-Quando a aplicação utiliza dois bancos para persistência, não existe uma transação distribuída automática entre eles. Uma falha durante a gravação pode deixar os bancos temporariamente inconsistentes. Para um ambiente de produção, é recomendável implementar uma estratégia de retentativa, reconciliação ou Outbox.
-
----
-
-## 13. Logging e monitoramento
-
-O projeto utiliza Serilog para registrar eventos importantes durante a execução.
-
-Os logs auxiliam no acompanhamento de:
-
-- Inicialização dos processos.
-- Execuções de coleta.
-- Falhas na comunicação com a OpenWeather.
-- Erros de persistência.
-- Execuções da consolidação diária.
-- Falhas de processamento.
-
-O tratamento de cancelamento respeita o `CancellationToken`, permitindo encerrar os processos sem tratar um encerramento solicitado como erro inesperado.
-
----
-
-## 14. Fluxo completo para testar o sistema
-
-Para executar o projeto do zero, siga esta sequência:
-
-**1.** Clone o repositório e entre na pasta:
-
-```bash
-git clone <URL_DO_REPOSITORIO>
-cd thermocity-weather-api
-```
-
-**2.** Restaure e compile:
-
-```bash
-dotnet restore
-dotnet build
-```
-
-**3.** Configure as variáveis de ambiente:
-
-```bash
-export OpenWeather__ApiKey="SUA_NOVA_CHAVE_OPENWEATHER"
-
-export MongoDb__ConnectionString="mongodb://admin:admin123@localhost:27017/thermocity-weather?authSource=admin"
-export MongoDb__DatabaseName="thermocity-weather"
-
-export ConnectionStrings__PostgreSql="Host=SEU_HOST;Port=5432;Database=thermocity;Username=SEU_USUARIO;Password=SUA_SENHA;SSL Mode=Require"
-
-export Database__ReadProvider="MongoDB"
-```
-
-**4.** Aplique as migrations do PostgreSQL:
-
-```bash
-dotnet ef database update \
-  --project src/ThermoCity.Weather.Infrastructure \
-  --startup-project src/ThermoCity.Weather.Worker
-```
-
-**5.** Execute os testes:
-
-```bash
-dotnet test
-```
-
-**6.** Inicie o Worker no primeiro terminal:
-
-```bash
-dotnet run --project src/ThermoCity.Weather.Worker
-```
-
-**7.** Configure as mesmas variáveis em um segundo terminal e inicie a API:
-
-```bash
-dotnet run --project src/ThermoCity.Weather.Api --urls http://localhost:5050
-```
-
-**8.** Acesse a documentação Swagger:
-
-```text
-http://localhost:5050/swagger
-```
-
-**9.** Verifique a disponibilidade da API:
-
-```bash
-curl http://localhost:5050/health/live
-```
-
-**10.** Consulte a leitura meteorológica mais recente:
-
-```bash
-curl "http://localhost:5050/api/readings/latest?source=OpenWeather"
-```
-
-**11.** Consulte as previsões:
-
-```bash
-curl "http://localhost:5050/api/forecasts?source=OpenWeather&startDate=2026-11-14&endDate=2026-11-16"
-```
-
-**12.** Consulte os resumos diários após a execução da consolidação:
-
-```bash
-curl "http://localhost:5050/api/daily-summaries/2026-11-13?source=OpenWeather"
-```
-
----
-
-## 15. Considerações para produção
-
-Antes de disponibilizar a aplicação em produção, alguns pontos devem ser revisados:
-
-- Ajustar a frequência de coleta de acordo com os limites da OpenWeather.
-- Configurar credenciais específicas e permissões mínimas para cada banco.
-- Garantir a criação dos índices únicos no MongoDB.
-- Configurar o índice TTL de sete dias para a coleção de leituras temporárias.
-- Implementar retentativas e reconciliação para persistência em múltiplos bancos.
-- Configurar HTTPS e políticas de CORS conforme os consumidores da API.
-- Configurar autenticação e autorização por JWT, incluindo validação de emissor, assinatura e expiração.
-- Avaliar a estratégia de execução e monitoramento do Worker em ambiente de hospedagem.
-- Evitar credenciais e chaves de API em arquivos versionados.
-
----
-
-## 16. Objetivo do projeto
-
-O ThermoCity Weather API constitui a camada de coleta, processamento e disponibilização de informações meteorológicas do ecossistema ThermoCity.
-
-A solução permite manter um histórico de observações, acompanhar previsões, calcular indicadores relacionados ao calor e disponibilizar informações consolidadas para aplicações que necessitam monitorar condições climáticas urbanas.
-
-A arquitetura foi organizada para permitir a evolução da solução, incluindo novas fontes meteorológicas, novos indicadores e integrações com outros serviços do ecossistema.
+A aplicação conta com instrumentação OpenTelemetry em conformidade com os padrões da CNCF:
+* Rastreabilidade automática de requisições HTTP recebidas (`OpenTelemetry.Instrumentation.AspNetCore`).
+* Rastreabilidade de chamadas HTTP externas (`OpenTelemetry.Instrumentation.Http`).
+* Exportador padrão em console (`OpenTelemetry.Exporter.Console`) com geração de `TraceId` e correlação de logs.

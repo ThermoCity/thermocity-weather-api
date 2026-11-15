@@ -17,6 +17,7 @@ using ThermoCity.Weather.Application.Interfaces;
 using ThermoCity.Weather.Application.Services;
 using ThermoCity.Weather.Infrastructure.Mongo;
 using ThermoCity.Weather.Infrastructure.Mongo.Repositories;
+using ThermoCity.Weather.Infrastructure.OpenWeather;
 using ThermoCity.Weather.Infrastructure.Security;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -65,6 +66,21 @@ builder.Services.AddSwaggerGen(options =>
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.OnRejected = async (context, token) =>
+    {
+        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        context.HttpContext.Response.ContentType = "application/problem+json";
+
+        var problemDetails = new Microsoft.AspNetCore.Mvc.ProblemDetails
+        {
+            Status = StatusCodes.Status429TooManyRequests,
+            Title = "Limite de requisições excedido",
+            Detail = "Você atingiu o limite de requisições permitido. Aguarde antes de tentar novamente."
+        };
+
+        await context.HttpContext.Response.WriteAsJsonAsync(problemDetails, cancellationToken: token);
+    };
 
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
     {
@@ -137,9 +153,17 @@ builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 // ── Health Checks ─────────────────────────────────────────────────────────────
+builder.Services.AddHttpClient<OpenWeatherHealthCheck>(client =>
+{
+    var baseUrl = builder.Configuration["OpenWeather:BaseUrl"] ?? "https://api.openweathermap.org/data/2.5/";
+    client.BaseAddress = new Uri(baseUrl);
+    client.Timeout = TimeSpan.FromSeconds(5);
+});
+
 builder.Services.AddHealthChecks()
     .AddCheck("self", () => HealthCheckResult.Healthy(), tags: new[] { "live" })
-    .AddCheck<MongoDbHealthCheck>("mongodb", tags: new[] { "ready" });
+    .AddCheck<MongoDbHealthCheck>("mongodb", tags: new[] { "ready" })
+    .AddCheck<OpenWeatherHealthCheck>("openweather", tags: new[] { "ready" });
 
 // ── OpenTelemetry ─────────────────────────────────────────────────────────────
 builder.Services
@@ -159,11 +183,8 @@ var app = builder.Build();
 app.UseSerilogRequestLogging();
 app.UseExceptionHandler();
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+app.UseSwagger();
+app.UseSwaggerUI();
 
 app.UseHttpsRedirection();
 app.UseRateLimiter();
