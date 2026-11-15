@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\ThermoCity.Weather.Domain\ThermoCity.Weather.Domain.csproj" />
@@ -9,7 +9,6 @@
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.5" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="11.0.0" />
     <PackageReference Include="MongoDB.Driver" Version="3.14.0" />
-    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
   </ItemGroup>
 
   <PropertyGroup>

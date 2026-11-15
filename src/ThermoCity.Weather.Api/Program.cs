@@ -1,7 +1,6 @@
 
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using MongoDB.Driver;
 using Serilog;
@@ -10,9 +9,6 @@ using System.Threading.RateLimiting;
 using ThermoCity.Weather.Application.Interfaces;
 using ThermoCity.Weather.Infrastructure.Mongo;
 using ThermoCity.Weather.Infrastructure.Mongo.Repositories;
-using ThermoCity.Weather.Infrastructure.PostgreSql;
-using ThermoCity.Weather.Infrastructure.PostgreSql.Repositories;
-using ThermoCity.Weather.Infrastructure.Repositories;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -85,53 +81,18 @@ builder.Services.AddSingleton<IMongoDatabase>(serviceProvider =>
     return client.GetDatabase(mongoDatabaseName);
 });
 
-// Configuração do PostgreSQL.
-var postgresConnectionString =
-    builder.Configuration.GetConnectionString("PostgreSql")
-    ?? throw new InvalidOperationException(
-        "ConnectionStrings:PostgreSql não foi configurada.");
+// Repositórios MongoDB.
+builder.Services.AddScoped<
+    IWeatherReadingRepository,
+    WeatherReadingRepository>();
 
-builder.Services.AddDbContext<ThermoCityDbContext>(options =>
-    options.UseNpgsql(postgresConnectionString));
+builder.Services.AddScoped<
+    IDailyForecastRepository,
+    DailyForecastRepository>();
 
-// Seleciona o banco utilizado nas consultas da API.
-var readProvider =
-    builder.Configuration["Database:ReadProvider"] ?? "MongoDB";
-
-switch (readProvider.ToUpperInvariant())
-{
-    case "MONGODB":
-        builder.Services.AddScoped<
-            IWeatherReadingRepository,
-            WeatherReadingRepository>();
-
-        builder.Services.AddScoped<
-            IDailyForecastRepository,
-            DailyForecastRepository>();
-
-        builder.Services.AddScoped<
-            IDailyWeatherSummaryRepository,
-            DailyWeatherSummaryRepository>();
-        break;
-
-    case "POSTGRESQL":
-        builder.Services.AddScoped<
-            IWeatherReadingRepository,
-            PostgresWeatherReadingRepository>();
-
-        builder.Services.AddScoped<
-            IDailyForecastRepository,
-            PostgresDailyForecastRepository>();
-
-        builder.Services.AddScoped<
-            IDailyWeatherSummaryRepository,
-            PostgresDailyWeatherSummaryRepository>();
-        break;
-
-    default:
-        throw new InvalidOperationException(
-            $"Provedor de leitura inválido: {readProvider}");
-}
+builder.Services.AddScoped<
+    IDailyWeatherSummaryRepository,
+    DailyWeatherSummaryRepository>();
 
 // Health Checks.
 builder.Services.AddHealthChecks()

@@ -1,13 +1,10 @@
 
-using Microsoft.EntityFrameworkCore;
 using MongoDB.Driver;
 using Serilog;
 using ThermoCity.Weather.Application.Interfaces;
 using ThermoCity.Weather.Application.Services;
 using ThermoCity.Weather.Infrastructure.Mongo.Repositories;
 using ThermoCity.Weather.Infrastructure.OpenWeather;
-using ThermoCity.Weather.Infrastructure.PostgreSql;
-using ThermoCity.Weather.Infrastructure.Repositories;
 using ThermoCity.Weather.Worker.Workers;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -25,83 +22,56 @@ builder.Services.AddSerilog((services, loggerConfiguration) =>
         .WriteTo.Console();
 });
 
-// Obtém as configurações de conexão com o MongoDB.
-var connectionString = builder.Configuration["MongoDb:ConnectionString"]
+// Configura o MongoDB.
+var mongoConnectionString =
+    builder.Configuration["MongoDb:ConnectionString"]
     ?? throw new InvalidOperationException(
         "MongoDb:ConnectionString não foi configurada.");
 
-var databaseName = builder.Configuration["MongoDb:DatabaseName"]
+var mongoDatabaseName =
+    builder.Configuration["MongoDb:DatabaseName"]
     ?? throw new InvalidOperationException(
         "MongoDb:DatabaseName não foi configurado.");
 
-// Registra o cliente MongoDB como Singleton.
-// O mesmo cliente pode ser compartilhado por todos os serviços.
 builder.Services.AddSingleton<IMongoClient>(
-    _ => new MongoClient(connectionString));
+    _ => new MongoClient(mongoConnectionString));
 
-// Disponibiliza o banco de dados para os repositórios.
 builder.Services.AddSingleton<IMongoDatabase>(serviceProvider =>
 {
     var client = serviceProvider.GetRequiredService<IMongoClient>();
-    return client.GetDatabase(databaseName);
+    return client.GetDatabase(mongoDatabaseName);
 });
 
-// Obtém a connection string do PostgreSQL.
-var postgresConnectionString = builder.Configuration
-    .GetConnectionString("PostgreSql")
-    ?? throw new InvalidOperationException(
-        "ConnectionStrings:PostgreSql não foi configurada.");
+// Repositórios MongoDB.
+builder.Services.AddScoped<IWeatherReadingRepository, WeatherReadingRepository>();
+builder.Services.AddScoped<IDailyForecastRepository, DailyForecastRepository>();
+builder.Services.AddScoped<IDailyWeatherSummaryRepository, DailyWeatherSummaryRepository>();
 
-// Registra o Entity Framework Core com o provedor PostgreSQL.
-builder.Services.AddDbContext<ThermoCityDbContext>(options =>
-{
-    options.UseNpgsql(postgresConnectionString);
-});
-
-// Registra os repositórios MongoDB como implementações concretas.
-builder.Services.AddScoped<WeatherReadingRepository>();
-builder.Services.AddScoped<DailyForecastRepository>();
-builder.Services.AddScoped<DailyWeatherSummaryRepository>();
-
-// Mantém as interfaces apontando para o MongoDB temporariamente.
-// Posteriormente serão substituídas pelos repositórios compostos.
-builder.Services.AddScoped<
-    IWeatherReadingRepository,
-    WeatherReadingRepository>();
-
-builder.Services.AddScoped<
-    IDailyForecastRepository,
-    DailyForecastRepository>();
-
-builder.Services.AddScoped<
-    IDailyWeatherSummaryRepository,
-    DailyWeatherSummaryRepository>();
-
-// Registra o serviço responsável pelo cálculo do índice de calor.
+// Serviço de cálculo do índice de calor.
 builder.Services.AddScoped<IHeatIndexService, HeatIndexService>();
 
-// Obtém a URL base da API OpenWeather.
-var openWeatherBaseUrl = builder.Configuration["OpenWeather:BaseUrl"]
+// Configura o provedor OpenWeather.
+var openWeatherBaseUrl =
+    builder.Configuration["OpenWeather:BaseUrl"]
     ?? throw new InvalidOperationException(
         "OpenWeather:BaseUrl não foi configurada.");
 
-// Configura o HttpClient utilizado pelo provedor meteorológico.
 builder.Services.AddHttpClient<IWeatherProvider, OpenWeatherProvider>(
     client =>
     {
         client.BaseAddress = new Uri(openWeatherBaseUrl);
     });
 
-// Registra o serviço de coleta das condições climáticas atuais.
+// Configura a quantidade de dias de previsão.
+var forecastDays = builder.Configuration.GetValue<int>(
+    "Worker:ForecastDays", 3);
+
+// Serviço de coleta das condições climáticas atuais.
 builder.Services.AddScoped<
     IWeatherCollectionService,
     WeatherCollectionService>();
 
-// Obtém a quantidade de dias de previsão configurada.
-var forecastDays = builder.Configuration.GetValue<int>(
-    "Worker:ForecastDays", 3);
-
-// Registra o serviço de coleta de previsões.
+// Serviço de coleta das previsões meteorológicas.
 builder.Services.AddScoped<IForecastCollectionService>(serviceProvider =>
 {
     return new ForecastCollectionService(
@@ -113,12 +83,12 @@ builder.Services.AddScoped<IForecastCollectionService>(serviceProvider =>
         forecastDays);
 });
 
-// Registra o serviço de consolidação diária.
+// Serviço de consolidação diária.
 builder.Services.AddScoped<
     IDailyConsolidationService,
     DailyConsolidationService>();
 
-// Registra as três rotinas executadas em segundo plano.
+// Registra as rotinas executadas em segundo plano.
 builder.Services.AddHostedService<WeatherCollectionWorker>();
 builder.Services.AddHostedService<ForecastCollectionWorker>();
 builder.Services.AddHostedService<DailyConsolidationWorker>();

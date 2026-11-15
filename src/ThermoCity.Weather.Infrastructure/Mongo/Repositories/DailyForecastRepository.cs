@@ -5,7 +5,7 @@ using ThermoCity.Weather.Application.Interfaces;
 using ThermoCity.Weather.Domain.Entities;
 using ThermoCity.Weather.Domain.Enums;
 
-namespace ThermoCity.Weather.Infrastructure.Repositories;
+namespace ThermoCity.Weather.Infrastructure.Mongo.Repositories;
 
 public class DailyForecastRepository : IDailyForecastRepository
 {
