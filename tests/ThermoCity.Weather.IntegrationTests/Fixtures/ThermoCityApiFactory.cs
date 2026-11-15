@@ -28,7 +28,10 @@ public class ThermoCityApiFactory : WebApplicationFactory<Program>
             configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["MongoDb:ConnectionString"] = "mongodb://localhost:27017",
-                ["MongoDb:DatabaseName"] = "thermocity-weather"
+                ["MongoDb:DatabaseName"] = "thermocity-weather",
+                ["Jwt:Key"] = "integration-tests-super-secret-key-at-least-32-chars",
+                ["Jwt:Issuer"] = "thermocity-weather-api",
+                ["Jwt:Audience"] = "thermocity-weather-clients"
             });
         });
 
