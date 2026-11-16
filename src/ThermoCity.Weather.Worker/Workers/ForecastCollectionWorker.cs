@@ -25,21 +25,38 @@ public class ForecastCollectionWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var intervalMinutes = _configuration.GetValue<int>(
-            "Worker:ForecastCollectionIntervalMinutes", 5);
+        var hour = _configuration.GetValue<int>(
+            "Worker:ForecastCollectionHour", 6);
 
-        if (intervalMinutes <= 0)
+        var minute = _configuration.GetValue<int>(
+            "Worker:ForecastCollectionMinute", 0);
+
+        if (hour is < 0 or > 23 || minute is < 0 or > 59)
             throw new InvalidOperationException(
-                "ForecastCollectionIntervalMinutes deve ser maior que zero.");
+                "Horário de coleta de previsões inválido.");
 
         _logger.LogInformation(
-            "ForecastCollectionWorker iniciado. Intervalo: {Interval} minutos.",
-            intervalMinutes);
+            "ForecastCollectionWorker iniciado. Horário diário: {Hour:D2}:{Minute:D2}.",
+            hour, minute);
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            var now = DateTime.Now;
+            var nextExecution = now.Date.AddHours(hour).AddMinutes(minute);
+
+            if (nextExecution <= now)
+                nextExecution = nextExecution.AddDays(1);
+
+            var delay = nextExecution - now;
+
+            _logger.LogInformation(
+                "Próxima coleta de previsões agendada para {NextExecution}.",
+                nextExecution);
+
             try
             {
+                await Task.Delay(delay, stoppingToken);
+
                 using var scope = _scopeFactory.CreateScope();
 
                 var forecastService = scope.ServiceProvider
@@ -60,18 +77,6 @@ public class ForecastCollectionWorker : BackgroundService
                 _logger.LogError(
                     exception,
                     "Erro durante a coleta de previsões meteorológicas.");
-            }
-
-            try
-            {
-                await Task.Delay(
-                    TimeSpan.FromMinutes(intervalMinutes),
-                    stoppingToken);
-            }
-            catch (OperationCanceledException)
-                when (stoppingToken.IsCancellationRequested)
-            {
-                break;
             }
         }
 
