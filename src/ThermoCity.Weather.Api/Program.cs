@@ -1,23 +1,207 @@
+
+using System.Text;
+using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.IdentityModel.Tokens;
+using MongoDB.Driver;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
+using Serilog;
+using ThermoCity.Weather.Api.ExceptionHandling;
+using ThermoCity.Weather.Api.Services;
+using ThermoCity.Weather.Application.Interfaces;
+using ThermoCity.Weather.Application.Services;
+using ThermoCity.Weather.Infrastructure.Mongo;
+using ThermoCity.Weather.Infrastructure.Mongo.Repositories;
+using ThermoCity.Weather.Infrastructure.OpenWeather;
+using ThermoCity.Weather.Infrastructure.Security;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+// ── Serilog ──────────────────────────────────────────────────────────────────
+builder.Host.UseSerilog((context, services, loggerConfiguration) =>
+{
+    loggerConfiguration
+        .ReadFrom.Configuration(context.Configuration)
+        .Enrich.FromLogContext()
+        .Enrich.WithProperty("Application", "ThermoCity.Weather.Api")
+        .Enrich.WithProperty("Environment", context.HostingEnvironment.EnvironmentName)
+        .WriteTo.Console();
+});
 
-builder.Services.AddControllers();
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
+// ── Controllers ───────────────────────────────────────────────────────────────
+builder.Services
+    .AddControllers()
+    .AddJsonOptions(options =>
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
+// ── Swagger ───────────────────────────────────────────────────────────────────
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = Microsoft.OpenApi.SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = Microsoft.OpenApi.ParameterLocation.Header,
+        Description = "Informe o token JWT no formato: Bearer {token}"
+    });
+
+    options.AddSecurityRequirement(_ => new Microsoft.OpenApi.OpenApiSecurityRequirement
+    {
+        {
+            new Microsoft.OpenApi.OpenApiSecuritySchemeReference("Bearer"),
+            new List<string>()
+        }
+    });
+});
+
+// ── Rate Limiting ─────────────────────────────────────────────────────────────
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.OnRejected = async (context, token) =>
+    {
+        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        context.HttpContext.Response.ContentType = "application/problem+json";
+
+        var problemDetails = new Microsoft.AspNetCore.Mvc.ProblemDetails
+        {
+            Status = StatusCodes.Status429TooManyRequests,
+            Title = "Limite de requisições excedido",
+            Detail = "Você atingiu o limite de requisições permitido. Aguarde antes de tentar novamente."
+        };
+
+        await context.HttpContext.Response.WriteAsJsonAsync(problemDetails, cancellationToken: token);
+    };
+
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+    {
+        var clientIp = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: clientIp,
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                AutoReplenishment = true,
+                PermitLimit = 10,
+                QueueLimit = 0,
+                Window = TimeSpan.FromMinutes(1)
+            });
+    });
+});
+
+// ── MongoDB ───────────────────────────────────────────────────────────────────
+var mongoConnectionString =
+    builder.Configuration["MongoDb:ConnectionString"]
+    ?? throw new InvalidOperationException("MongoDb:ConnectionString não foi configurada.");
+
+var mongoDatabaseName =
+    builder.Configuration["MongoDb:DatabaseName"]
+    ?? throw new InvalidOperationException("MongoDb:DatabaseName não foi configurado.");
+
+builder.Services.AddSingleton<IMongoClient>(_ => new MongoClient(mongoConnectionString));
+
+builder.Services.AddSingleton<IMongoDatabase>(sp =>
+    sp.GetRequiredService<IMongoClient>().GetDatabase(mongoDatabaseName));
+
+// ── Repositórios MongoDB ──────────────────────────────────────────────────────
+builder.Services.AddScoped<IWeatherReadingRepository, WeatherReadingRepository>();
+builder.Services.AddScoped<IDailyForecastRepository, DailyForecastRepository>();
+builder.Services.AddScoped<IDailyWeatherSummaryRepository, DailyWeatherSummaryRepository>();
+builder.Services.AddScoped<IUserRepository, UserRepository>();
+
+// ── Serviços de autenticação ──────────────────────────────────────────────────
+builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<ITokenService, TokenService>();
+
+// ── JWT Authentication ────────────────────────────────────────────────────────
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer();
+
+builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+    .Configure<IConfiguration>((options, configuration) =>
+    {
+        var key = configuration["Jwt:Key"]
+            ?? throw new InvalidOperationException("Jwt:Key não configurada.");
+
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = configuration["Jwt:Issuer"],
+            ValidAudience = configuration["Jwt:Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key))
+        };
+    });
+
+builder.Services.AddAuthorization();
+
+// ── Global Exception Handler ──────────────────────────────────────────────────
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+
+// ── Health Checks ─────────────────────────────────────────────────────────────
+builder.Services.AddHttpClient<OpenWeatherHealthCheck>(client =>
+{
+    var baseUrl = builder.Configuration["OpenWeather:BaseUrl"] ?? "https://api.openweathermap.org/data/2.5/";
+    client.BaseAddress = new Uri(baseUrl);
+    client.Timeout = TimeSpan.FromSeconds(5);
+});
+
+builder.Services.AddHealthChecks()
+    .AddCheck("self", () => HealthCheckResult.Healthy(), tags: new[] { "live" })
+    .AddCheck<MongoDbHealthCheck>("mongodb", tags: new[] { "ready" })
+    .AddCheck<OpenWeatherHealthCheck>("openweather", tags: new[] { "ready" });
+
+// ── OpenTelemetry ─────────────────────────────────────────────────────────────
+builder.Services
+    .AddOpenTelemetry()
+    .ConfigureResource(resource => resource
+        .AddService(
+            serviceName: "ThermoCity.Weather.Api",
+            serviceVersion: "1.0.0"))
+    .WithTracing(tracing => tracing
+        .AddAspNetCoreInstrumentation()
+        .AddHttpClientInstrumentation()
+        .AddConsoleExporter());
+
+// ── Build ─────────────────────────────────────────────────────────────────────
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-}
+app.UseSerilogRequestLogging();
+app.UseExceptionHandler();
+
+app.UseSwagger();
+app.UseSwaggerUI();
 
 app.UseHttpsRedirection();
-
+app.UseRateLimiter();
+app.UseAuthentication();
 app.UseAuthorization();
-
 app.MapControllers();
 
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("live")
+});
+
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready")
+});
+
 app.Run();
+
+public partial class Program { }
