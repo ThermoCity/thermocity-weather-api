@@ -1,5 +1,10 @@
 # Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
 # More GitHub Actions for Azure: https://github.com/Azure/actions
+#
+# O pacote publicado tem duas aplicações no mesmo Web App:
+#   api/     -> ThermoCity.Weather.Api (HTTP, endpoints e autenticação)
+#   worker/  -> ThermoCity.Weather.Worker (3 workers: leituras, previsões e resumo diário)
+#   start.sh -> sobe o Worker em segundo plano e a API em primeiro plano
 
 name: Build and deploy .NET app to Azure Web App - thermocity-weather-api
 
@@ -15,8 +20,8 @@ on:
 env:
   AZURE_WEBAPP_NAME: 'thermocity-weather-api'
   SOLUTION: 'ThermoCity.Weather.slnx'
-  API_PROJECT: 'src/ThermoCity.Weather.Api/ThermoCity.Weather.Api.csproj'
-  UNIT_TESTS: 'tests/ThermoCity.Weather.UnitTests/ThermoCity.Weather.UnitTests.csproj'
+  API_PROJECT: 'src/ThermoCity.Weather.Api'
+  WORKER_PROJECT: 'src/ThermoCity.Weather.Worker'
 
 jobs:
   build:
@@ -36,20 +41,46 @@ jobs:
         run: dotnet restore ${{ env.SOLUTION }}
 
       - name: Build
-        run: dotnet build ${{ env.SOLUTION }} -c Release --no-restore
+        run: dotnet build ${{ env.SOLUTION }} --configuration Release --no-restore
 
-      # Só os testes de unidade: os de integração precisam de MongoDB rodando.
-      - name: Unit tests
-        run: dotnet test ${{ env.UNIT_TESTS }} -c Release --no-build
+      - name: Test
+        run: dotnet test ${{ env.SOLUTION }} --configuration Release --no-build
 
       - name: Publish API
-        run: dotnet publish ${{ env.API_PROJECT }} -c Release --no-build -o '${{ github.workspace }}/publish'
+        run: dotnet publish ${{ env.API_PROJECT }} --configuration Release --output ./package/api
+
+      - name: Publish Worker
+        run: dotnet publish ${{ env.WORKER_PROJECT }} --configuration Release --output ./package/worker
+
+      - name: Create start script
+        run: |
+          cat > ./package/start.sh <<'EOF'
+          #!/bin/bash
+          # Sobe o Worker em segundo plano (reinicia sozinho se cair) e a API em primeiro plano.
+          export ASPNETCORE_URLS="http://0.0.0.0:${PORT:-8080}"
+          ROOT=/home/site/wwwroot
+
+          (
+            cd "$ROOT/worker"
+            while true; do
+              echo "[start.sh] Iniciando o Worker..."
+              dotnet ThermoCity.Weather.Worker.dll
+              echo "[start.sh] Worker encerrou (código $?). Reiniciando em 15s..."
+              sleep 15
+            done
+          ) &
+
+          cd "$ROOT/api"
+          echo "[start.sh] Iniciando a API..."
+          exec dotnet ThermoCity.Weather.Api.dll
+          EOF
+          chmod +x ./package/start.sh
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: dotnet-app
-          path: '${{ github.workspace }}/publish'
+          path: ./package
 
   deploy:
     runs-on: ubuntu-latest
