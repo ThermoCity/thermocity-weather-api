@@ -33,13 +33,13 @@ builder.Host.UseSerilog((context, services, loggerConfiguration) =>
         .WriteTo.Console();
 });
 
-// ── Controllers ───────────────────────────────────────────────────────────────
+// ── Controllers ──────────────────────────────────────────────────────────────
 builder.Services
     .AddControllers()
     .AddJsonOptions(options =>
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
-// ── Swagger ───────────────────────────────────────────────────────────────────
+// ── Swagger ──────────────────────────────────────────────────────────────────
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -62,7 +62,7 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
-// ── Rate Limiting ─────────────────────────────────────────────────────────────
+// ── Rate Limiting ────────────────────────────────────────────────────────────
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -79,7 +79,9 @@ builder.Services.AddRateLimiter(options =>
             Detail = "Você atingiu o limite de requisições permitido. Aguarde antes de tentar novamente."
         };
 
-        await context.HttpContext.Response.WriteAsJsonAsync(problemDetails, cancellationToken: token);
+        await context.HttpContext.Response.WriteAsJsonAsync(
+            problemDetails,
+            cancellationToken: token);
     };
 
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
@@ -98,7 +100,7 @@ builder.Services.AddRateLimiter(options =>
     });
 });
 
-// ── MongoDB ───────────────────────────────────────────────────────────────────
+// ── MongoDB ──────────────────────────────────────────────────────────────────
 var mongoConnectionString =
     builder.Configuration["MongoDb:ConnectionString"]
     ?? throw new InvalidOperationException("MongoDb:ConnectionString não foi configurada.");
@@ -112,18 +114,21 @@ builder.Services.AddSingleton<IMongoClient>(_ => new MongoClient(mongoConnection
 builder.Services.AddSingleton<IMongoDatabase>(sp =>
     sp.GetRequiredService<IMongoClient>().GetDatabase(mongoDatabaseName));
 
-// ── Repositórios MongoDB ──────────────────────────────────────────────────────
+// ── Repositórios MongoDB ─────────────────────────────────────────────────────
 builder.Services.AddScoped<IWeatherReadingRepository, WeatherReadingRepository>();
 builder.Services.AddScoped<IDailyForecastRepository, DailyForecastRepository>();
 builder.Services.AddScoped<IDailyWeatherSummaryRepository, DailyWeatherSummaryRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 
-// ── Serviços de autenticação ──────────────────────────────────────────────────
+// ── Serviços da Application ──────────────────────────────────────────────────
+builder.Services.AddScoped<IHeatAlertService, HeatAlertService>();
+
+// ── Serviços de autenticação ─────────────────────────────────────────────────
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 
-// ── JWT Authentication ────────────────────────────────────────────────────────
+// ── JWT Authentication ───────────────────────────────────────────────────────
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer();
@@ -148,14 +153,16 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
 
 builder.Services.AddAuthorization();
 
-// ── Global Exception Handler ──────────────────────────────────────────────────
+// ── Global Exception Handler ─────────────────────────────────────────────────
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
-// ── Health Checks ─────────────────────────────────────────────────────────────
+// ── Health Checks ────────────────────────────────────────────────────────────
 builder.Services.AddHttpClient<OpenWeatherHealthCheck>(client =>
 {
-    var baseUrl = builder.Configuration["OpenWeather:BaseUrl"] ?? "https://api.openweathermap.org/data/2.5/";
+    var baseUrl = builder.Configuration["OpenWeather:BaseUrl"]
+        ?? "https://api.openweathermap.org/data/2.5/";
+
     client.BaseAddress = new Uri(baseUrl);
     client.Timeout = TimeSpan.FromSeconds(5);
 });
@@ -165,7 +172,7 @@ builder.Services.AddHealthChecks()
     .AddCheck<MongoDbHealthCheck>("mongodb", tags: new[] { "ready" })
     .AddCheck<OpenWeatherHealthCheck>("openweather", tags: new[] { "ready" });
 
-// ── OpenTelemetry ─────────────────────────────────────────────────────────────
+// ── OpenTelemetry ────────────────────────────────────────────────────────────
 builder.Services
     .AddOpenTelemetry()
     .ConfigureResource(resource => resource
@@ -177,7 +184,7 @@ builder.Services
         .AddHttpClientInstrumentation()
         .AddConsoleExporter());
 
-// ── Build ─────────────────────────────────────────────────────────────────────
+// ── Build ────────────────────────────────────────────────────────────────────
 var app = builder.Build();
 
 app.UseSerilogRequestLogging();
@@ -190,6 +197,7 @@ app.UseHttpsRedirection();
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
+
 app.MapControllers();
 
 app.MapHealthChecks("/health/live", new HealthCheckOptions
