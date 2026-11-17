@@ -7,6 +7,7 @@ using ThermoCity.Weather.Application.Interfaces;
 using ThermoCity.Weather.Application.Services;
 using ThermoCity.Weather.Infrastructure.Mongo.Repositories;
 using ThermoCity.Weather.Infrastructure.OpenWeather;
+using ThermoCity.Weather.Infrastructure.RabbitMQ;
 using ThermoCity.Weather.Worker.Workers;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -70,10 +71,24 @@ builder.Services.AddScoped<IForecastCollectionService>(sp =>
 
 builder.Services.AddScoped<IDailyConsolidationService, DailyConsolidationService>();
 
+// ── RabbitMQ ──────────────────────────────────────────────────────────────────
+builder.Services.AddSingleton<IHeatAlertPublisher, RabbitMqHeatAlertPublisher>();
+
+// ── Heat Alert API ────────────────────────────────────────────────────────────
+var heatAlertsApiBaseUrl =
+    builder.Configuration["HeatAlertsApi:BaseUrl"]
+    ?? throw new InvalidOperationException("HeatAlertsApi:BaseUrl não foi configurada.");
+
+builder.Services.AddHttpClient("HeatAlertsApi", client =>
+{
+    client.BaseAddress = new Uri(heatAlertsApiBaseUrl);
+});
+
 // ── Workers ───────────────────────────────────────────────────────────────────
 builder.Services.AddHostedService<WeatherCollectionWorker>();
 builder.Services.AddHostedService<ForecastCollectionWorker>();
 builder.Services.AddHostedService<DailyConsolidationWorker>();
+builder.Services.AddHostedService<HeatAlertMonitoringWorker>();
 
 // ── OpenTelemetry ─────────────────────────────────────────────────────────────
 builder.Services
