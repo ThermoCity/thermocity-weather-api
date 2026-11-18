@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_WEBAPP_NAME: 'thermocity-weather-api'
+  AZURE_WEBAPP_NAME: 'thermocity-weather-api-v2'
   SOLUTION: 'ThermoCity.Weather.slnx'
   API_PROJECT: 'src/ThermoCity.Weather.Api'
   WORKER_PROJECT: 'src/ThermoCity.Weather.Worker'
